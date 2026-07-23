@@ -1072,7 +1072,10 @@ export function ConnectionsExplorer() {
 
         </div>
         <section className={`connections-chart ${viewMode === "ranking" ? "" : "is-hidden"}`} aria-label="Connection rankings">
-          <div className="ranking-chart" aria-label="Characters ranked from least to most total connections">
+          <div
+            className={`ranking-chart ${rankingHoveredName ? "has-relation-focus" : ""}`}
+            aria-label="Characters ranked from least to most total connections"
+          >
             {connectionRanking.map((item, index) => {
               const isHoverSource = rankingHoveredName === item.character.name;
               const isIncomingRelation = Boolean(

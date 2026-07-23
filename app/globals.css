@@ -262,19 +262,30 @@ button:focus-visible, input:focus-visible, select:focus-visible, a:focus-visible
   color: var(--ink);
   background: transparent;
   text-align: left;
-  transition: background .16s ease, padding .16s ease;
+  transition: opacity .18s ease, background .16s ease, box-shadow .16s ease, padding .16s ease;
 }
 .ranking-row:hover, .ranking-row:focus-visible { padding-inline: 9px; background: rgba(255,255,255,.035); }
-.ranking-row.relation-source { background: rgba(255,255,255,.075); box-shadow: inset 3px 0 var(--ink); }
-.ranking-row.relation-incoming { background: rgba(216,255,67,.075); box-shadow: inset 3px 0 var(--acid); }
-.ranking-row.relation-outgoing { background: rgba(53,224,208,.075); box-shadow: inset 3px 0 var(--strategist); }
-.ranking-row.relation-both { background: rgba(255,255,255,.085); box-shadow: inset 3px 0 #fff; }
+.ranking-chart.has-relation-focus .ranking-row { opacity: .32; }
+.ranking-chart.has-relation-focus .ranking-row.relation-source,
+.ranking-chart.has-relation-focus .ranking-row.relation-incoming,
+.ranking-chart.has-relation-focus .ranking-row.relation-outgoing,
+.ranking-chart.has-relation-focus .ranking-row.relation-both { opacity: 1; }
+.ranking-row.relation-source { background: rgba(255,255,255,.14); box-shadow: inset 4px 0 var(--ink), inset 0 0 0 1px rgba(255,255,255,.32); }
+.ranking-row.relation-incoming { background: rgba(216,255,67,.16); box-shadow: inset 4px 0 var(--acid), inset 0 0 0 1px rgba(216,255,67,.38); }
+.ranking-row.relation-outgoing { background: rgba(53,224,208,.16); box-shadow: inset 4px 0 var(--strategist), inset 0 0 0 1px rgba(53,224,208,.38); }
+.ranking-row.relation-both { background: rgba(255,255,255,.17); box-shadow: inset 4px 0 #fff, inset 0 0 0 1px rgba(255,255,255,.5); }
+.ranking-row.relation-source .ranking-label strong,
+.ranking-row.relation-source .ranking-total strong { color: #fff; }
 .ranking-row.relation-incoming .ranking-label strong { color: var(--acid); }
 .ranking-row.relation-outgoing .ranking-label strong { color: var(--strategist); }
 .ranking-row.relation-both .ranking-label strong { color: #fff; }
-.ranking-row.relation-incoming .ranking-portrait { box-shadow: 0 0 0 2px rgba(216,255,67,.55); }
-.ranking-row.relation-outgoing .ranking-portrait { box-shadow: 0 0 0 2px rgba(53,224,208,.55); }
-.ranking-row.relation-both .ranking-portrait { box-shadow: 0 0 0 2px rgba(255,255,255,.65); }
+.ranking-row.relation-source .ranking-portrait { box-shadow: 0 0 0 3px rgba(255,255,255,.72), 0 0 12px rgba(255,255,255,.28); }
+.ranking-row.relation-incoming .ranking-portrait { box-shadow: 0 0 0 3px rgba(216,255,67,.78), 0 0 12px rgba(216,255,67,.35); }
+.ranking-row.relation-outgoing .ranking-portrait { box-shadow: 0 0 0 3px rgba(53,224,208,.78), 0 0 12px rgba(53,224,208,.35); }
+.ranking-row.relation-both .ranking-portrait { box-shadow: 0 0 0 3px rgba(255,255,255,.82), 0 0 12px rgba(255,255,255,.4); }
+.ranking-row.relation-incoming .ranking-total strong { color: var(--acid); }
+.ranking-row.relation-outgoing .ranking-total strong { color: var(--strategist); }
+.ranking-row.relation-both .ranking-total strong { color: #fff; }
 .ranking-label { min-width: 0; display: flex; align-items: center; gap: 9px; }
 .ranking-label small { width: 22px; color: #667176; font: 900 8px/1 var(--display); }
 .ranking-label strong { overflow: hidden; font-size: 11px; text-overflow: ellipsis; white-space: nowrap; }
