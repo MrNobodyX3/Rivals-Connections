@@ -243,6 +243,14 @@ button:focus-visible, input:focus-visible, select:focus-visible, a:focus-visible
 .ranking-label { min-width: 0; display: flex; align-items: center; gap: 9px; }
 .ranking-label small { width: 22px; color: #667176; font: 900 8px/1 var(--display); }
 .ranking-label strong { overflow: hidden; font-size: 11px; text-overflow: ellipsis; white-space: nowrap; }
+.portrait-frame { position: relative; display: grid; place-items: center; overflow: hidden; background: #151d20; }
+.portrait-frame img { width: 100%; height: 100%; display: block; object-fit: cover; }
+.portrait-fallback { color: currentColor; font-size: inherit; font-weight: 900; line-height: 1; }
+.ranking-portrait { flex: 0 0 auto; width: 22px; height: 22px; border: 1px solid currentColor; }
+.ranking-portrait.vanguard, .drawer-monogram.vanguard, .member-monogram.vanguard { color: var(--vanguard); }
+.ranking-portrait.duelist, .drawer-monogram.duelist, .member-monogram.duelist { color: var(--duelist); }
+.ranking-portrait.strategist, .drawer-monogram.strategist, .member-monogram.strategist { color: var(--strategist); }
+.ranking-portrait.flex, .drawer-monogram.flex, .member-monogram.flex { color: var(--flex); }
 .ranking-role-dot { flex: 0 0 auto; width: 7px; height: 7px; border-radius: 50%; background: #899196; }
 .ranking-role-dot.vanguard { background: var(--vanguard); }
 .ranking-role-dot.duelist { background: var(--duelist); }
@@ -273,7 +281,7 @@ footer strong { color: var(--ink); font: 800 14px/1 var(--display); text-transfo
 .team-drawer { width: min(1240px, 96vw); height: 100%; overflow: auto; background: #0d1214; border-left: 1px solid rgba(216,255,67,.25); box-shadow: -30px 0 90px rgba(0,0,0,.5); animation: drawer-in .27s cubic-bezier(.2,.8,.2,1); }
 .drawer-head { position: sticky; z-index: 5; top: 0; min-height: 156px; padding: 28px 34px; display: flex; justify-content: space-between; gap: 28px; align-items: flex-start; border-bottom: 1px solid var(--line); background: rgba(13,18,20,.96); backdrop-filter: blur(16px); }
 .drawer-character { display: flex; gap: 18px; align-items: flex-start; }
-.drawer-monogram { flex: 0 0 auto; width: 66px; height: 66px; display: grid; place-items: center; border: 2px solid; font: 900 17px/1 var(--display); }
+.drawer-monogram { flex: 0 0 auto; width: 66px; height: 66px; border: 2px solid currentColor; font: 900 17px/1 var(--display); }
 .drawer-head h2 { margin: 7px 0 6px; font: 900 32px/1 var(--display); letter-spacing: -.02em; text-transform: uppercase; }
 .drawer-head p { max-width: 600px; margin: 0; color: var(--muted); font-size: 11px; line-height: 1.5; }
 .drawer-close { flex: 0 0 auto; width: 38px; height: 38px; border: 1px solid var(--line); color: var(--ink); background: transparent; font-size: 25px; line-height: 1; }
@@ -300,7 +308,7 @@ footer strong { color: var(--ink); font: 800 14px/1 var(--display); text-transfo
 .coverage-badge.is-complete { color: var(--acid); background: rgba(216,255,67,.07); border-color: rgba(216,255,67,.28); }
 .team-members { padding: 9px; display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; }
 .member-chip { min-width: 0; min-height: 42px; padding: 5px; display: flex; align-items: center; gap: 7px; border: 1px solid var(--line); background: rgba(0,0,0,.12); }
-.member-monogram { flex: 0 0 auto; width: 31px; height: 31px; display: grid; place-items: center; border: 1px solid currentColor; font-size: 8px; font-weight: 900; }
+.member-monogram { flex: 0 0 auto; width: 31px; height: 31px; border: 1px solid currentColor; font-size: 8px; font-weight: 900; }
 .member-chip.vanguard { color: var(--vanguard); }
 .member-chip.duelist { color: var(--duelist); }
 .member-chip.strategist { color: var(--strategist); }

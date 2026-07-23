@@ -242,6 +242,24 @@ function roleClass(role: Role) {
   return role === "All" ? "flex" : role.toLowerCase();
 }
 
+function CharacterPortrait({ name, className }: { name: string; className: string }) {
+  const [hasImage, setHasImage] = useState(true);
+
+  return (
+    <span className={`portrait-frame ${className}`} aria-hidden="true">
+      {hasImage ? (
+        <img
+          src={`characters/${characterImageFilename(name)}`}
+          alt=""
+          onError={() => setHasImage(false)}
+        />
+      ) : (
+        <span className="portrait-fallback">{initials(name)}</span>
+      )}
+    </span>
+  );
+}
+
 function edgePath(source: Point, target: Point, curve: number, nodeRadius: number) {
   const dx = target.x - source.x;
   const dy = target.y - source.y;
@@ -283,7 +301,10 @@ function TeamCard({ team, index }: { team: RankedTeam; index: number }) {
             member.role === "All" ? team.deadpoolRole ?? "Duelist" : member.role;
           return (
             <div className={`member-chip ${roleClass(displayedRole)}`} key={member.name}>
-              <span className="member-monogram">{initials(member.name)}</span>
+              <CharacterPortrait
+                name={member.name}
+                className={`member-monogram ${roleClass(displayedRole)}`}
+              />
               <span>
                 <strong>{member.name}</strong>
                 <small>
@@ -811,7 +832,10 @@ export function ConnectionsExplorer() {
               >
                 <span className="ranking-label">
                   <small>{String(index + 1).padStart(2, "0")}</small>
-                  <i className={`ranking-role-dot ${roleClass(item.character.role)}`} aria-hidden="true" />
+                  <CharacterPortrait
+                    name={item.character.name}
+                    className={`ranking-portrait ${roleClass(item.character.role)}`}
+                  />
                   <strong>{item.character.name}</strong>
                 </span>
                 <span className="bar-track" aria-hidden="true">
@@ -839,7 +863,10 @@ export function ConnectionsExplorer() {
           <aside ref={drawerRef} className="team-drawer" role="dialog" aria-modal="true" aria-labelledby="drawer-title" aria-describedby="drawer-description">
             <div className="drawer-head">
               <div className="drawer-character">
-                <span className={`drawer-monogram ${roleClass(selectedCharacter.role)}`}>{initials(selectedCharacter.name)}</span>
+                <CharacterPortrait
+                  name={selectedCharacter.name}
+                  className={`drawer-monogram ${roleClass(selectedCharacter.role)}`}
+                />
                 <div>
                   <span className="eyebrow">TEAM BUILDER · {season.shortLabel}</span>
                   <h2 id="drawer-title">Teams for {selectedCharacter.name}</h2>
