@@ -11,6 +11,7 @@ import {
 
 type GraphEdge = { source: string; target: string };
 type Point = { x: number; y: number };
+type EdgePorts = { startAngle: number; endAngle: number };
 type RoleFilter = "All heroes" | Exclude<Role, "All" | "TBD">;
 type ViewMode = "network" | "ranking";
 type GraphSize = { width: number; height: number };
@@ -40,12 +41,41 @@ const selectionRoleOrder: Array<{ role: Role; label: string }> = [
 
 function getRoleCenters({ width, height }: GraphSize): Record<Role, Point> {
   return {
-    Vanguard: { x: width * 0.18, y: height * 0.53 },
+    Vanguard: { x: width * 0.15, y: height * 0.53 },
     Duelist: { x: width * 0.5, y: height * 0.53 },
-    Strategist: { x: width * 0.82, y: height * 0.53 },
+    Strategist: { x: width * 0.85, y: height * 0.53 },
     All: { x: width * 0.5, y: height * 0.13 },
-    TBD: { x: width * 0.9, y: height * 0.88 },
+    TBD: { x: width * 0.85, y: height * 0.88 },
   };
+}
+
+function getRoleLane(role: Role, { width }: GraphSize) {
+  const outerPadding = width < 700 ? 34 : 62;
+  const laneGap = width < 700 ? 9 : Math.min(34, width * 0.025);
+  const vanguardEnd = width * 0.3;
+  const strategistStart = width * 0.7;
+
+  if (role === "Vanguard") {
+    return { minX: outerPadding, maxX: vanguardEnd - laneGap };
+  }
+  if (role === "Strategist" || role === "TBD") {
+    return { minX: strategistStart + laneGap, maxX: width - outerPadding };
+  }
+  return {
+    minX: vanguardEnd + laneGap,
+    maxX: strategistStart - laneGap,
+  };
+}
+
+function clampPointToRole(point: Point, role: Role, graphSize: GraphSize) {
+  const lane = getRoleLane(role, graphSize);
+  const topPadding = graphSize.width < 700 ? 54 : 86;
+  const bottomPadding = graphSize.width < 700 ? 38 : 52;
+  point.x = Math.min(lane.maxX, Math.max(lane.minX, point.x));
+  point.y = Math.min(
+    graphSize.height - bottomPadding,
+    Math.max(topPadding, point.y),
+  );
 }
 
 function getMinimumNodeDistance({ width, height }: GraphSize) {
@@ -55,6 +85,10 @@ function getMinimumNodeDistance({ width, height }: GraphSize) {
 
 function getNodeRadius({ width }: GraphSize) {
   return width < 700 ? 17 : NODE_RADIUS;
+}
+
+function stabilizeGraphDimension(value: number, step: number, minimum: number) {
+  return Math.max(minimum, Math.round(value / step) * step);
 }
 
 function hashName(name: string) {
@@ -72,95 +106,201 @@ function characterImageFilename(name: string) {
   return `${camelCaseName}.webp`;
 }
 
-function createLayout(characters: Character[], edges: GraphEdge[], graphSize: GraphSize) {
-  const { width, height } = graphSize;
-  const roleCenters = getRoleCenters(graphSize);
-  const minimumDistance = getMinimumNodeDistance(graphSize);
-  const points = new Map<string, Point>();
-  const velocities = new Map<string, Point>();
-  const groups = new Map<Role, Character[]>();
+type LayoutLane = "vanguard" | "duelist" | "strategist";
 
-  characters.forEach((character) => {
-    const group = groups.get(character.role) ?? [];
-    group.push(character);
-    groups.set(character.role, group);
-  });
+function getLayoutLane(role: Role): LayoutLane {
+  if (role === "Vanguard") return "vanguard";
+  if (role === "Strategist" || role === "TBD") return "strategist";
+  return "duelist";
+}
 
-  groups.forEach((group, role) => {
-    group.sort((a, b) => a.name.localeCompare(b.name));
-    group.forEach((character, index) => {
-      const angle =
-        (Math.PI * 2 * index) / Math.max(group.length, 1) +
-        ((hashName(character.name) % 17) - 8) * 0.006;
-      const ring = minimumDistance * 0.82 + (index % 3) * minimumDistance * 0.82;
-      const center = roleCenters[role];
-      points.set(character.name, {
-        x: center.x + Math.cos(angle) * ring,
-        y: center.y + Math.sin(angle) * ring,
-      });
-      velocities.set(character.name, { x: 0, y: 0 });
-    });
-  });
+function createHexCells(
+  role: Role,
+  count: number,
+  graphSize: GraphSize,
+  preferredSpacing: number,
+) {
+  const lane = getRoleLane(role, graphSize);
+  const top = graphSize.width < 700 ? 58 : 94;
+  const bottom = graphSize.height - (graphSize.width < 700 ? 42 : 58);
+  const minimumSpacing = graphSize.width < 700 ? 38 : 66;
+  let spacing = preferredSpacing;
+  let cells: Point[] = [];
 
-  for (let iteration = 0; iteration < 260; iteration += 1) {
-    const forces = new Map(characters.map((character) => [character.name, { x: 0, y: 0 }]));
-
-    for (let i = 0; i < characters.length; i += 1) {
-      const a = characters[i];
-      const pointA = points.get(a.name)!;
-      for (let j = i + 1; j < characters.length; j += 1) {
-        const b = characters[j];
-        const pointB = points.get(b.name)!;
-        let dx = pointB.x - pointA.x;
-        let dy = pointB.y - pointA.y;
-        let distanceSquared = dx * dx + dy * dy;
-        if (distanceSquared < 1) {
-          dx = 1;
-          dy = 0;
-          distanceSquared = 1;
-        }
-        const distance = Math.sqrt(distanceSquared);
-        const repulsion = 2400 / Math.max(distanceSquared, 220);
-        const collision = distance < minimumDistance ? (minimumDistance - distance) * 0.13 : 0;
-        const force = repulsion + collision;
-        const fx = (dx / distance) * force;
-        const fy = (dy / distance) * force;
-        forces.get(a.name)!.x -= fx;
-        forces.get(a.name)!.y -= fy;
-        forces.get(b.name)!.x += fx;
-        forces.get(b.name)!.y += fy;
+  while (spacing >= minimumSpacing) {
+    cells = [];
+    const rowStep = spacing * 0.866;
+    let row = 0;
+    for (let y = top; y <= bottom; y += rowStep) {
+      const offset = row % 2 === 0 ? 0 : spacing * 0.5;
+      for (let x = lane.minX + offset; x <= lane.maxX; x += spacing) {
+        cells.push({ x, y });
       }
+      row += 1;
     }
-
-    edges.forEach((edge) => {
-      const source = points.get(edge.source);
-      const target = points.get(edge.target);
-      if (!source || !target) return;
-      const dx = target.x - source.x;
-      const dy = target.y - source.y;
-      const distance = Math.max(Math.sqrt(dx * dx + dy * dy), 1);
-      const force = (distance - minimumDistance * 2.1) * 0.0025;
-      const fx = (dx / distance) * force;
-      const fy = (dy / distance) * force;
-      forces.get(edge.source)!.x += fx;
-      forces.get(edge.source)!.y += fy;
-      forces.get(edge.target)!.x -= fx;
-      forces.get(edge.target)!.y -= fy;
-    });
-
-    characters.forEach((character) => {
-      const point = points.get(character.name)!;
-      const center = roleCenters[character.role];
-      const force = forces.get(character.name)!;
-      force.x += (center.x - point.x) * 0.0026;
-      force.y += (center.y - point.y) * 0.0026;
-      const velocity = velocities.get(character.name)!;
-      velocity.x = (velocity.x + force.x) * 0.78;
-      velocity.y = (velocity.y + force.y) * 0.78;
-      point.x = Math.min(width - 58, Math.max(58, point.x + velocity.x));
-      point.y = Math.min(height - 52, Math.max(52, point.y + velocity.y));
-    });
+    if (cells.length >= count) break;
+    spacing -= 3;
   }
+
+  return { cells, spacing };
+}
+
+function createLayout(characters: Character[], edges: GraphEdge[], graphSize: GraphSize) {
+  const roleCenters = getRoleCenters(graphSize);
+  const preferredSpacing = getMinimumNodeDistance(graphSize) * 0.94;
+  const adjacency = new Map<string, Set<string>>(
+    characters.map((character) => [character.name, new Set<string>()]),
+  );
+  edges.forEach((edge) => {
+    adjacency.get(edge.source)?.add(edge.target);
+    adjacency.get(edge.target)?.add(edge.source);
+  });
+
+  const laneCharacters = new Map<LayoutLane, Character[]>([
+    ["vanguard", []],
+    ["duelist", []],
+    ["strategist", []],
+  ]);
+  characters.forEach((character) => {
+    laneCharacters.get(getLayoutLane(character.role))!.push(character);
+  });
+
+  const lanePools = new Map<LayoutLane, { available: Point[]; spacing: number }>();
+  (["vanguard", "duelist", "strategist"] as LayoutLane[]).forEach((laneName) => {
+    const group = laneCharacters.get(laneName)!;
+    const representativeRole: Role =
+      laneName === "vanguard"
+        ? "Vanguard"
+        : laneName === "strategist"
+          ? "Strategist"
+          : "Duelist";
+    const grid = createHexCells(
+      representativeRole,
+      group.length,
+      graphSize,
+      preferredSpacing,
+    );
+    lanePools.set(laneName, { available: grid.cells, spacing: grid.spacing });
+  });
+
+  const orderedCharacters = [...characters].sort((a, b) => {
+    const degreeDifference =
+      (adjacency.get(b.name)?.size ?? 0) - (adjacency.get(a.name)?.size ?? 0);
+    return degreeDifference || a.name.localeCompare(b.name);
+  });
+  const points = new Map<string, Point>();
+  const laneAssignments = new Map<LayoutLane, string[]>([
+    ["vanguard", []],
+    ["duelist", []],
+    ["strategist", []],
+  ]);
+
+  orderedCharacters.forEach((character) => {
+    const laneName = getLayoutLane(character.role);
+    const pool = lanePools.get(laneName)!;
+    const center = roleCenters[character.role];
+    let bestIndex = 0;
+    let bestScore = Number.POSITIVE_INFINITY;
+
+    pool.available.forEach((cell, index) => {
+      let score =
+        Math.abs(cell.x - center.x) * 0.035 +
+        Math.abs(cell.y - center.y) * 0.018 +
+        (hashName(`${character.name}:${index}`) % 19) * 0.001;
+
+      adjacency.get(character.name)?.forEach((neighborName) => {
+        const neighborPoint = points.get(neighborName);
+        if (!neighborPoint) return;
+        const neighborCharacter = characters.find(
+          (candidate) => candidate.name === neighborName,
+        );
+        const neighborLane = neighborCharacter
+          ? getLayoutLane(neighborCharacter.role)
+          : laneName;
+        const neighborSpacing = lanePools.get(neighborLane)?.spacing ?? pool.spacing;
+        const minimumConnectedDistance =
+          Math.min(pool.spacing, neighborSpacing) * 1.72;
+        const distance = Math.hypot(
+          cell.x - neighborPoint.x,
+          cell.y - neighborPoint.y,
+        );
+        if (distance < minimumConnectedDistance) {
+          const shortfall = minimumConnectedDistance - distance;
+          score += 1_000_000 + shortfall * shortfall * 250;
+        } else {
+          score += Math.abs(distance - minimumConnectedDistance * 1.35) * 0.025;
+        }
+      });
+
+      if (score < bestScore) {
+        bestScore = score;
+        bestIndex = index;
+      }
+    });
+
+    const [chosenCell] = pool.available.splice(bestIndex, 1);
+    points.set(character.name, chosenCell);
+    laneAssignments.get(laneName)!.push(character.name);
+  });
+
+  const connectedPenalty = (layout: Map<string, Point>) => {
+    let penalty = 0;
+    edges.forEach((edge) => {
+      const source = layout.get(edge.source);
+      const target = layout.get(edge.target);
+      if (!source || !target) return;
+      const sourceCharacter = characters.find(
+        (character) => character.name === edge.source,
+      );
+      const targetCharacter = characters.find(
+        (character) => character.name === edge.target,
+      );
+      if (!sourceCharacter || !targetCharacter) return;
+      const sourceSpacing =
+        lanePools.get(getLayoutLane(sourceCharacter.role))?.spacing ?? preferredSpacing;
+      const targetSpacing =
+        lanePools.get(getLayoutLane(targetCharacter.role))?.spacing ?? preferredSpacing;
+      const minimumDistance = Math.min(sourceSpacing, targetSpacing) * 1.72;
+      const distance = Math.hypot(target.x - source.x, target.y - source.y);
+      if (distance < minimumDistance) {
+        const shortfall = minimumDistance - distance;
+        penalty += shortfall * shortfall * 100;
+      }
+    });
+    return penalty;
+  };
+
+  let currentPenalty = connectedPenalty(points);
+  let randomState = 0x9e3779b9;
+  const nextRandom = () => {
+    randomState = (randomState * 1664525 + 1013904223) >>> 0;
+    return randomState / 0x100000000;
+  };
+
+  for (let iteration = 0; iteration < 2400 && currentPenalty > 0; iteration += 1) {
+    const laneNames = (["vanguard", "duelist", "strategist"] as LayoutLane[]).filter(
+      (laneName) => laneAssignments.get(laneName)!.length > 1,
+    );
+    const laneName = laneNames[Math.floor(nextRandom() * laneNames.length)];
+    const names = laneAssignments.get(laneName)!;
+    const firstIndex = Math.floor(nextRandom() * names.length);
+    let secondIndex = Math.floor(nextRandom() * names.length);
+    if (firstIndex === secondIndex) secondIndex = (secondIndex + 1) % names.length;
+    const firstName = names[firstIndex];
+    const secondName = names[secondIndex];
+    const firstPoint = points.get(firstName)!;
+    const secondPoint = points.get(secondName)!;
+    points.set(firstName, secondPoint);
+    points.set(secondName, firstPoint);
+    const nextPenalty = connectedPenalty(points);
+    if (nextPenalty <= currentPenalty) {
+      currentPenalty = nextPenalty;
+    } else {
+      points.set(firstName, firstPoint);
+      points.set(secondName, secondPoint);
+    }
+  }
+
   return points;
 }
 
@@ -203,7 +343,7 @@ function createHoverTarget(
   });
 
   // A short collision pass prevents the pushed nodes from landing on neighbors.
-  for (let pass = 0; pass < 3; pass += 1) {
+  for (let pass = 0; pass < 5; pass += 1) {
     for (let i = 0; i < characters.length; i += 1) {
       const a = characters[i];
       const pointA = target.get(a.name)!;
@@ -213,7 +353,7 @@ function createHoverTarget(
         let dx = pointB.x - pointA.x;
         let dy = pointB.y - pointA.y;
         let distance = Math.sqrt(dx * dx + dy * dy);
-        const collisionDistance = minimumDistance * 0.8;
+        const collisionDistance = minimumDistance * 1.02;
         if (distance >= collisionDistance) continue;
         if (distance < 1) {
           dx = 1;
@@ -239,9 +379,9 @@ function createHoverTarget(
     }
   }
 
-  target.forEach((point) => {
-    point.x = Math.min(graphSize.width - 58, Math.max(58, point.x));
-    point.y = Math.min(graphSize.height - 52, Math.max(52, point.y));
+  characters.forEach((character) => {
+    const point = target.get(character.name)!;
+    clampPointToRole(point, character.role, graphSize);
   });
   return target;
 }
@@ -274,22 +414,174 @@ function CharacterPortrait({ name, className }: { name: string; className: strin
   );
 }
 
-function edgePath(source: Point, target: Point, curve: number, nodeRadius: number) {
-  const dx = target.x - source.x;
-  const dy = target.y - source.y;
-  const distance = Math.max(Math.sqrt(dx * dx + dy * dy), 1);
-  const unitX = dx / distance;
-  const unitY = dy / distance;
-  const startX = source.x + unitX * (nodeRadius + 7);
-  const startY = source.y + unitY * (nodeRadius + 7);
-  const endX = target.x - unitX * (nodeRadius + 12);
-  const endY = target.y - unitY * (nodeRadius + 12);
-  const midX = (startX + endX) / 2 - unitY * curve;
-  const midY = (startY + endY) / 2 + unitX * curve;
-  return `M ${startX.toFixed(1)} ${startY.toFixed(1)} Q ${midX.toFixed(1)} ${midY.toFixed(1)} ${endX.toFixed(1)} ${endY.toFixed(1)}`;
+const PORT_COUNT = 16;
+const PORT_STEP = (Math.PI * 2) / PORT_COUNT;
+const PORT_ZERO_ANGLE = -Math.PI / 2;
+
+function edgeKey(edge: GraphEdge) {
+  return `${edge.source}\u0000${edge.target}`;
 }
 
-function TeamCard({ team, index, selectedName }: { team: RankedTeam; index: number; selectedName: string }) {
+function normalizeSlot(slot: number) {
+  return ((slot % PORT_COUNT) + PORT_COUNT) % PORT_COUNT;
+}
+
+function angleToPort(angle: number) {
+  return normalizeSlot(Math.round((angle - PORT_ZERO_ANGLE) / PORT_STEP));
+}
+
+function portToAngle(port: number) {
+  return PORT_ZERO_ANGLE + normalizeSlot(port) * PORT_STEP;
+}
+
+function nearestAvailablePort(
+  desiredPort: number,
+  occupied: Set<number>,
+  preferredVerticalSide: -1 | 0 | 1 = 0,
+) {
+  const candidates: number[] = [];
+  for (let distance = 0; distance < PORT_COUNT; distance += 1) {
+    const clockwise = normalizeSlot(desiredPort + distance);
+    if (!candidates.includes(clockwise)) candidates.push(clockwise);
+    if (distance === 0) continue;
+    const counterClockwise = normalizeSlot(desiredPort - distance);
+    if (!candidates.includes(counterClockwise)) candidates.push(counterClockwise);
+  }
+
+  if (preferredVerticalSide !== 0) {
+    const sameSidePort = candidates.find((port) => {
+      if (occupied.has(port)) return false;
+      const verticalDirection = Math.sin(portToAngle(port));
+      return preferredVerticalSide < 0
+        ? verticalDirection <= 0
+        : verticalDirection >= 0;
+    });
+    if (sameSidePort !== undefined) return sameSidePort;
+  }
+
+  const availablePort = candidates.find((port) => !occupied.has(port));
+  if (availablePort !== undefined) return availablePort;
+  return desiredPort;
+}
+
+function createEdgePorts(
+  layout: Map<string, Point>,
+  edges: GraphEdge[],
+  nodeRadius: number,
+) {
+  const ports = new Map<string, EdgePorts>(
+    edges.map((edge) => [edgeKey(edge), { startAngle: 0, endAngle: 0 }]),
+  );
+  const startsByCharacter = new Map<string, GraphEdge[]>();
+  const endsByCharacter = new Map<string, GraphEdge[]>();
+
+  edges.forEach((edge) => {
+    startsByCharacter.set(edge.source, [
+      ...(startsByCharacter.get(edge.source) ?? []),
+      edge,
+    ]);
+    endsByCharacter.set(edge.target, [
+      ...(endsByCharacter.get(edge.target) ?? []),
+      edge,
+    ]);
+  });
+
+  layout.forEach((center, characterName) => {
+    const occupied = new Set<number>();
+    const starts = [...(startsByCharacter.get(characterName) ?? [])].sort(
+      (a, b) => a.target.localeCompare(b.target),
+    );
+    const ends = [...(endsByCharacter.get(characterName) ?? [])].sort(
+      (a, b) => a.source.localeCompare(b.source),
+    );
+
+    starts.forEach((edge) => {
+      const target = layout.get(edge.target)!;
+      const desiredPort = angleToPort(
+        Math.atan2(target.y - center.y, target.x - center.x),
+      );
+      const port = nearestAvailablePort(desiredPort, occupied);
+      occupied.add(port);
+      ports.get(edgeKey(edge))!.startAngle = portToAngle(port);
+    });
+
+    ends.forEach((edge) => {
+      const source = layout.get(edge.source)!;
+      const startAngle = ports.get(edgeKey(edge))!.startAngle;
+      const startPoint = {
+        x: source.x + Math.cos(startAngle) * (nodeRadius + 7),
+        y: source.y + Math.sin(startAngle) * (nodeRadius + 7),
+      };
+      const desiredPort = angleToPort(
+        Math.atan2(startPoint.y - center.y, startPoint.x - center.x),
+      );
+      const verticalDifference = startPoint.y - center.y;
+      const preferredVerticalSide: -1 | 0 | 1 =
+        Math.abs(verticalDifference) < nodeRadius * 0.25
+          ? 0
+          : verticalDifference < 0
+            ? -1
+            : 1;
+      const port = nearestAvailablePort(
+        desiredPort,
+        occupied,
+        preferredVerticalSide,
+      );
+      occupied.add(port);
+      ports.get(edgeKey(edge))!.endAngle = portToAngle(port);
+    });
+  });
+
+  return ports;
+}
+
+function edgePath(
+  source: Point,
+  target: Point,
+  ports: EdgePorts,
+  nodeRadius: number,
+) {
+  const sourceDirection = {
+    x: Math.cos(ports.startAngle),
+    y: Math.sin(ports.startAngle),
+  };
+  const targetDirection = {
+    x: Math.cos(ports.endAngle),
+    y: Math.sin(ports.endAngle),
+  };
+  const start = {
+    x: source.x + sourceDirection.x * (nodeRadius + 7),
+    y: source.y + sourceDirection.y * (nodeRadius + 7),
+  };
+  const end = {
+    x: target.x + targetDirection.x * (nodeRadius + 12),
+    y: target.y + targetDirection.y * (nodeRadius + 12),
+  };
+  const distance = Math.max(Math.hypot(end.x - start.x, end.y - start.y), 1);
+  const handle = Math.min(82, Math.max(26, distance * 0.28));
+  const controlOne = {
+    x: start.x + sourceDirection.x * handle,
+    y: start.y + sourceDirection.y * handle,
+  };
+  const controlTwo = {
+    x: end.x + targetDirection.x * handle,
+    y: end.y + targetDirection.y * handle,
+  };
+
+  return `M ${start.x.toFixed(1)} ${start.y.toFixed(1)} C ${controlOne.x.toFixed(1)} ${controlOne.y.toFixed(1)} ${controlTwo.x.toFixed(1)} ${controlTwo.y.toFixed(1)} ${end.x.toFixed(1)} ${end.y.toFixed(1)}`;
+}
+
+function TeamCard({
+  team,
+  index,
+  selectedName,
+  onSelect,
+}: {
+  team: RankedTeam;
+  index: number;
+  selectedName: string;
+  onSelect: (team: RankedTeam) => void;
+}) {
   const members = orderedTeamMembers(team);
   const activeLinks = team.connections.length;
   const connectionGroups = members.flatMap((member) => {
@@ -300,7 +592,19 @@ function TeamCard({ team, index, selectedName }: { team: RankedTeam; index: numb
   });
   const allConnected = team.coveredMembers === team.members.length;
   return (
-    <article className="team-card">
+    <article
+      className="team-card"
+      role="button"
+      tabIndex={0}
+      aria-label={`Show team ${index + 1} on the connection web`}
+      onClick={() => onSelect(team)}
+      onKeyDown={(event) => {
+        if (event.key === "Enter" || event.key === " ") {
+          event.preventDefault();
+          onSelect(team);
+        }
+      }}
+    >
       <div className="team-card-head">
         <span className="rank">#{String(index + 1).padStart(2, "0")}</span>
         <div className="score-cluster">
@@ -344,6 +648,9 @@ function TeamCard({ team, index, selectedName }: { team: RankedTeam; index: numb
           ))}
         </div>
       </div>
+      <div className="team-card-action">
+        View on connection web <span aria-hidden="true">↗</span>
+      </div>
     </article>
   );
 }
@@ -354,12 +661,14 @@ function TeamSection({
   description,
   teams,
   selectedName,
+  onSelectTeam,
 }: {
   eyebrow: string;
   title: string;
   description: string;
   teams: RankedTeam[];
   selectedName: string;
+  onSelectTeam: (team: RankedTeam) => void;
 }) {
   return (
     <section className="team-section">
@@ -370,7 +679,13 @@ function TeamSection({
       </div>
       <div className="team-list">
         {teams.length > 0 ? teams.map((team, index) => (
-          <TeamCard team={team} index={index} selectedName={selectedName} key={team.members.map((m) => m.name).join("-")} />
+          <TeamCard
+            team={team}
+            index={index}
+            selectedName={selectedName}
+            onSelect={onSelectTeam}
+            key={team.members.map((m) => m.name).join("-")}
+          />
         )) : <p className="empty-team-results">No teams in this section match the selected chain.</p>}
       </div>
     </section>
@@ -446,22 +761,40 @@ export function ConnectionsExplorer() {
         character.providers
           .filter((provider) => characterMap.has(provider))
           .map((provider) => ({ source: provider, target: character.name })),
-      ),
+    ),
     [characters, characterMap],
   );
-  const roleCenters = useMemo(() => getRoleCenters(graphSize), [graphSize]);
-  const nodeRadius = getNodeRadius(graphSize);
+  const stableGraphWidth = stabilizeGraphDimension(
+    graphSize.width,
+    graphSize.width < 700 ? 48 : 120,
+    320,
+  );
+  const stableGraphHeight = stabilizeGraphDimension(
+    graphSize.height,
+    graphSize.width < 700 ? 48 : 96,
+    288,
+  );
+  const layoutSize = useMemo(
+    () => ({ width: stableGraphWidth, height: stableGraphHeight }),
+    [stableGraphHeight, stableGraphWidth],
+  );
+  const roleCenters = useMemo(() => getRoleCenters(layoutSize), [layoutSize]);
+  const nodeRadius = getNodeRadius(layoutSize);
   const layout = useMemo(
-    () => createLayout(characters, edges, graphSize),
-    [characters, edges, graphSize],
+    () => createLayout(characters, edges, layoutSize),
+    [characters, edges, layoutSize],
+  );
+  const edgePorts = useMemo(
+    () => createEdgePorts(layout, edges, nodeRadius),
+    [edges, layout, nodeRadius],
   );
   const [displayLayout, setDisplayLayout] = useState(layout);
   const displayLayoutRef = useRef(layout);
 
   useEffect(() => {
     const startLayout = displayLayoutRef.current;
-    const layoutHoverName = isMultiSelect && pinnedNames.size > 0 ? null : hoveredName;
-    const targetLayout = createHoverTarget(layout, characters, layoutHoverName, graphSize);
+    const layoutHoverName = isMultiSelect ? null : hoveredName;
+    const targetLayout = createHoverTarget(layout, characters, layoutHoverName, layoutSize);
     const startedAt = performance.now();
     const duration = window.matchMedia("(prefers-reduced-motion: reduce)").matches ? 1 : 220;
     let animationFrame = 0;
@@ -485,7 +818,7 @@ export function ConnectionsExplorer() {
 
     animationFrame = window.requestAnimationFrame(animate);
     return () => window.cancelAnimationFrame(animationFrame);
-  }, [characters, graphSize, hoveredName, isMultiSelect, layout, pinnedNames]);
+  }, [characters, hoveredName, isMultiSelect, layout, layoutSize]);
 
   const recipients = useMemo(() => {
     const map = new Map<string, string[]>();
@@ -602,6 +935,14 @@ export function ConnectionsExplorer() {
     setChainFocus(null);
     setTeamResults(null);
     setIsGenerating(false);
+  };
+
+  const showTeamOnNetwork = (team: RankedTeam) => {
+    setPinnedNames(new Set(team.members.map((member) => member.name)));
+    setIsMultiSelect(true);
+    setHoveredName(null);
+    setViewMode("network");
+    closeTeamBuilder();
   };
 
   const addChainMember = (name: string, direction: ChainDirection) => {
@@ -778,6 +1119,75 @@ export function ConnectionsExplorer() {
     }, 90);
   };
 
+  const renderGraphNode = (character: Character) => {
+    const point = displayLayout.get(character.name) ?? layout.get(character.name)!;
+    const isRoleMatch =
+      roleFilter === "All heroes" ||
+      character.role === roleFilter ||
+      character.role === "All";
+    const isSearchMatch =
+      !normalizedSearch || character.name.toLowerCase().includes(normalizedSearch);
+    const isConnected = highlightedNames.size === 0 || connectedNames.has(character.name);
+    const isFilterDim = !isRoleMatch || !isSearchMatch;
+    const isConnectionDim = !isFilterDim && !isConnected;
+    const hideName = highlightedNames.size > 0 && !isConnected;
+    const isActive = highlightedNames.has(character.name);
+    const isRelatedPreview =
+      highlightedNames.size > 0 && !isFilterDim && isConnected && !isActive;
+    const isPinned = pinnedNames.has(character.name);
+    const hasImage = !failedImageNames.has(character.name);
+    const portraitId = `portrait-${character.name.replace(/[^a-zA-Z0-9]/g, "").toLowerCase()}`;
+
+    return (
+      <g
+        className={`hero-node ${roleClass(character.role)} ${isFilterDim ? "filter-dim" : ""} ${isConnectionDim ? "connection-dim" : ""} ${isRelatedPreview ? "connection-related" : ""} ${hideName ? "name-hidden" : ""} ${isActive ? "active" : ""} ${isPinned ? "multi-selected" : ""} ${!character.released ? "unreleased" : ""}`}
+        data-character={character.name}
+        role="button"
+        tabIndex={0}
+        aria-pressed={isMultiSelect ? isPinned : undefined}
+        aria-label={`${character.name}, ${character.role === "All" ? "any role" : character.role}. ${isMultiSelect ? `${isPinned ? "Remove from" : "Add to"} path selection.` : character.released ? "Select to generate optimal teams." : "Not yet released; team generation unavailable."}`}
+        transform={`translate(${point.x.toFixed(2)} ${point.y.toFixed(2)})`}
+        onMouseEnter={() => beginNodeHover(character.name)}
+        onMouseLeave={endNodeHover}
+        onFocus={() => beginNodeHover(character.name)}
+        onBlur={() => setHoveredName(null)}
+        onClick={() => activateGraphNode(character.name)}
+        onKeyDown={(event) => {
+          if (event.key === "Enter" || event.key === " ") {
+            event.preventDefault();
+            activateGraphNode(character.name);
+          }
+        }}
+        key={character.name}
+      >
+        <defs>
+          <clipPath id={portraitId}>
+            <circle r={nodeRadius - 2} />
+          </clipPath>
+        </defs>
+        <circle className="node-halo" r={nodeRadius + 7} />
+        <circle className="node-core" r={nodeRadius} />
+        {hasImage ? (
+          <image
+            className="node-portrait"
+            href={`characters/${characterImageFilename(character.name)}`}
+            x={-nodeRadius + 2}
+            y={-nodeRadius + 2}
+            width={(nodeRadius - 2) * 2}
+            height={(nodeRadius - 2) * 2}
+            clipPath={`url(#${portraitId})`}
+            preserveAspectRatio="xMidYMid slice"
+            onError={() => setFailedImageNames((names) => new Set(names).add(character.name))}
+          />
+        ) : (
+          <text className="node-initials" textAnchor="middle" dominantBaseline="central">{initials(character.name)}</text>
+        )}
+        <text className="node-name" y={nodeRadius + 17} textAnchor="middle">{character.name}</text>
+        {!character.released && <text className="node-nr" x={nodeRadius * 0.72} y={-nodeRadius * 0.7} textAnchor="middle">NR</text>}
+      </g>
+    );
+  };
+
   return (
     <main className="site-shell">
       <header className="topbar">
@@ -945,7 +1355,7 @@ export function ConnectionsExplorer() {
           <div ref={graphContainerRef} className="graph-scroll" aria-label="Interactive character network">
             <svg
               className="network-svg"
-              viewBox={`0 0 ${graphSize.width} ${graphSize.height}`}
+              viewBox={`0 0 ${layoutSize.width} ${layoutSize.height}`}
               role="img"
               aria-label={`${season.label} Marvel Rivals team-up connection network`}
             >
@@ -955,6 +1365,10 @@ export function ConnectionsExplorer() {
                 <marker id="arrow-outgoing" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M 0 0 L 10 5 L 0 10 z" /></marker>
                 <marker id="arrow-both" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M 0 0 L 10 5 L 0 10 z" /></marker>
               </defs>
+              <g className="svg-role-guides" aria-hidden="true">
+                <line x1={layoutSize.width * 0.3} y1="76" x2={layoutSize.width * 0.3} y2={layoutSize.height - 28} />
+                <line x1={layoutSize.width * 0.7} y1="76" x2={layoutSize.width * 0.7} y2={layoutSize.height - 28} />
+              </g>
               <g className="svg-role-labels" aria-hidden="true">
                 <text className="vanguard" x={roleCenters.Vanguard.x} y="58" textAnchor="middle">VANGUARD</text>
                 <text className="duelist" x={roleCenters.Duelist.x} y="58" textAnchor="middle">DUELIST</text>
@@ -966,8 +1380,10 @@ export function ConnectionsExplorer() {
                   const target = displayLayout.get(edge.target) ?? layout.get(edge.target)!;
                   const sourceHighlighted = highlightedNames.has(edge.source);
                   const targetHighlighted = highlightedNames.has(edge.target);
-                  const bend = 18 + (hashName(`${edge.source}:${edge.target}`) % 24);
-                  const curve = edge.source < edge.target ? bend : -bend;
+                  const ports = edgePorts.get(edgeKey(edge)) ?? {
+                    startAngle: Math.atan2(target.y - source.y, target.x - source.x),
+                    endAngle: Math.atan2(source.y - target.y, source.x - target.x),
+                  };
                   const state = isMultiSelect
                     ? hoveredName === edge.source
                       ? "outgoing"
@@ -991,7 +1407,7 @@ export function ConnectionsExplorer() {
                   return (
                     <path
                       className={`edge ${state}`}
-                      d={edgePath(source, target, curve, nodeRadius)}
+                      d={edgePath(source, target, ports, nodeRadius)}
                       markerEnd={`url(#arrow-${markerState})`}
                       key={`${edge.source}-${edge.target}`}
                     />
@@ -999,73 +1415,7 @@ export function ConnectionsExplorer() {
                 })}
               </g>
               <g className="nodes">
-                {characters.map((character) => {
-                  const point = displayLayout.get(character.name) ?? layout.get(character.name)!;
-                  const isRoleMatch =
-                    roleFilter === "All heroes" ||
-                    character.role === roleFilter ||
-                    character.role === "All";
-                  const isSearchMatch =
-                    !normalizedSearch || character.name.toLowerCase().includes(normalizedSearch);
-                  const isConnected = highlightedNames.size === 0 || connectedNames.has(character.name);
-                  const isFilterDim = !isRoleMatch || !isSearchMatch;
-                  const isConnectionDim = !isFilterDim && !isConnected;
-                  const hideName = highlightedNames.size > 0 && !isConnected;
-                  const isActive = highlightedNames.has(character.name);
-                  const isRelatedPreview =
-                    highlightedNames.size > 0 && !isFilterDim && isConnected && !isActive;
-                  const isPinned = pinnedNames.has(character.name);
-                  const hasImage = !failedImageNames.has(character.name);
-                  const portraitId = `portrait-${character.name.replace(/[^a-zA-Z0-9]/g, "").toLowerCase()}`;
-                  return (
-                    <g
-                      className={`hero-node ${roleClass(character.role)} ${isFilterDim ? "filter-dim" : ""} ${isConnectionDim ? "connection-dim" : ""} ${isRelatedPreview ? "connection-related" : ""} ${hideName ? "name-hidden" : ""} ${isActive ? "active" : ""} ${isPinned ? "multi-selected" : ""} ${!character.released ? "unreleased" : ""}`}
-                      data-character={character.name}
-                      role="button"
-                      tabIndex={0}
-                      aria-pressed={isMultiSelect ? isPinned : undefined}
-                      aria-label={`${character.name}, ${character.role === "All" ? "any role" : character.role}. ${isMultiSelect ? `${isPinned ? "Remove from" : "Add to"} path selection.` : character.released ? "Select to generate optimal teams." : "Not yet released; team generation unavailable."}`}
-                      transform={`translate(${point.x.toFixed(2)} ${point.y.toFixed(2)})`}
-                      onMouseEnter={() => beginNodeHover(character.name)}
-                      onMouseLeave={endNodeHover}
-                      onFocus={() => beginNodeHover(character.name)}
-                      onBlur={() => setHoveredName(null)}
-                      onClick={() => activateGraphNode(character.name)}
-                      onKeyDown={(event) => {
-                        if (event.key === "Enter" || event.key === " ") {
-                          event.preventDefault();
-                          activateGraphNode(character.name);
-                        }
-                      }}
-                      key={character.name}
-                    >
-                      <defs>
-                        <clipPath id={portraitId}>
-                          <circle r={nodeRadius - 2} />
-                        </clipPath>
-                      </defs>
-                      <circle className="node-halo" r={nodeRadius + 7} />
-                      <circle className="node-core" r={nodeRadius} />
-                      {hasImage ? (
-                        <image
-                          className="node-portrait"
-                          href={`characters/${characterImageFilename(character.name)}`}
-                          x={-nodeRadius + 2}
-                          y={-nodeRadius + 2}
-                          width={(nodeRadius - 2) * 2}
-                          height={(nodeRadius - 2) * 2}
-                          clipPath={`url(#${portraitId})`}
-                          preserveAspectRatio="xMidYMid slice"
-                          onError={() => setFailedImageNames((names) => new Set(names).add(character.name))}
-                        />
-                      ) : (
-                        <text className="node-initials" textAnchor="middle" dominantBaseline="central">{initials(character.name)}</text>
-                      )}
-                      <text className="node-name" y={nodeRadius + 17} textAnchor="middle">{character.name}</text>
-                      {!character.released && <text className="node-nr" x={nodeRadius * 0.72} y={-nodeRadius * 0.7} textAnchor="middle">NR</text>}
-                    </g>
-                  );
-                })}
+                {characters.map((character) => renderGraphNode(character))}
               </g>
             </svg>
           </div>
@@ -1301,6 +1651,7 @@ export function ConnectionsExplorer() {
                       description="Exactly two Vanguards, two Duelists, and two Strategists. Deadpool fills the missing role when selected."
                       teams={teamResults.balanced}
                       selectedName={selectedCharacter.name}
+                      onSelectTeam={showTeamOnNetwork}
                     />
                     <TeamSection
                       eyebrow="SECTION 02 · OPEN QUEUE"
@@ -1308,6 +1659,7 @@ export function ConnectionsExplorer() {
                       description="No role limits. Teams where every hero receives a team-up are ranked first."
                       teams={teamResults.open}
                       selectedName={selectedCharacter.name}
+                      onSelectTeam={showTeamOnNetwork}
                     />
                     <div className="ranking-note">
                       <strong>How the ranking works</strong>
