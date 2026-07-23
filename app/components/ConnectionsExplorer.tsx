@@ -14,6 +14,13 @@ type Point = { x: number; y: number };
 type RoleFilter = "All heroes" | Exclude<Role, "All" | "TBD">;
 type ViewMode = "network" | "ranking";
 type GraphSize = { width: number; height: number };
+type ChainDirection = "incoming" | "outgoing";
+type ChainStep = {
+  name: string;
+  direction?: ChainDirection;
+  parent?: string;
+  order: number;
+};
 
 const NODE_RADIUS = 26;
 const DEFAULT_GRAPH_SIZE: GraphSize = { width: 1400, height: 680 };
@@ -275,7 +282,7 @@ function edgePath(source: Point, target: Point, curve: number, nodeRadius: numbe
   return `M ${startX.toFixed(1)} ${startY.toFixed(1)} Q ${midX.toFixed(1)} ${midY.toFixed(1)} ${endX.toFixed(1)} ${endY.toFixed(1)}`;
 }
 
-function TeamCard({ team, index }: { team: RankedTeam; index: number }) {
+function TeamCard({ team, index, selectedName }: { team: RankedTeam; index: number; selectedName: string }) {
   const members = orderedTeamMembers(team);
   const activeLinks = team.connections.length;
   const connectionGroups = members.flatMap((member) => {
@@ -300,7 +307,10 @@ function TeamCard({ team, index }: { team: RankedTeam; index: number }) {
           const displayedRole =
             member.role === "All" ? team.deadpoolRole ?? "Duelist" : member.role;
           return (
-            <div className={`member-chip ${roleClass(displayedRole)}`} key={member.name}>
+            <div
+              className={`member-chip ${roleClass(displayedRole)} ${member.name === selectedName ? "is-selected" : ""}`}
+              key={member.name}
+            >
               <CharacterPortrait
                 name={member.name}
                 className={`member-monogram ${roleClass(displayedRole)}`}
@@ -336,11 +346,13 @@ function TeamSection({
   title,
   description,
   teams,
+  selectedName,
 }: {
   eyebrow: string;
   title: string;
   description: string;
   teams: RankedTeam[];
+  selectedName: string;
 }) {
   return (
     <section className="team-section">
@@ -350,9 +362,9 @@ function TeamSection({
         <p>{description}</p>
       </div>
       <div className="team-list">
-        {teams.map((team, index) => (
-          <TeamCard team={team} index={index} key={team.members.map((m) => m.name).join("-")} />
-        ))}
+        {teams.length > 0 ? teams.map((team, index) => (
+          <TeamCard team={team} index={index} selectedName={selectedName} key={team.members.map((m) => m.name).join("-")} />
+        )) : <p className="empty-team-results">No teams in this section match the selected chain.</p>}
       </div>
     </section>
   );
@@ -364,6 +376,8 @@ export function ConnectionsExplorer() {
   const [hoveredName, setHoveredName] = useState<string | null>(null);
   const [failedImageNames, setFailedImageNames] = useState<Set<string>>(() => new Set());
   const [selectedName, setSelectedName] = useState<string | null>(null);
+  const [chainSteps, setChainSteps] = useState<ChainStep[]>([]);
+  const [chainFocus, setChainFocus] = useState<string | null>(null);
   const [search, setSearch] = useState("");
   const [roleFilter, setRoleFilter] = useState<RoleFilter>("All heroes");
   const [teamResults, setTeamResults] = useState<TeamResults | null>(null);
@@ -373,6 +387,7 @@ export function ConnectionsExplorer() {
   const drawerRef = useRef<HTMLElement>(null);
   const previousFocusRef = useRef<HTMLElement | SVGElement | null>(null);
   const hoverLeaveTimerRef = useRef<number | null>(null);
+  const chainSequenceRef = useRef(0);
   const cache = useRef(new Map<string, TeamResults>());
 
   useEffect(() => () => {
@@ -410,6 +425,7 @@ export function ConnectionsExplorer() {
 
   const season = seasons.find((item) => item.id === seasonId) ?? seasons[0];
   const characters = season.characters;
+  const chainMembers = useMemo(() => chainSteps.map((step) => step.name), [chainSteps]);
   const characterMap = useMemo(
     () => new Map(characters.map((character) => [character.name, character])),
     [characters],
@@ -503,18 +519,33 @@ export function ConnectionsExplorer() {
     if (!selectedName) return;
     const selected = characterMap.get(selectedName);
     if (!selected?.released) return;
-    const cacheKey = `${season.id}:${selectedName}`;
-    if (cache.current.has(cacheKey)) return;
+    const requiredNames = chainMembers.length > 0 ? chainMembers : [selectedName];
+    const cacheKey = `${season.id}:${[...new Set(requiredNames)].sort().join("|")}`;
+    const cached = cache.current.get(cacheKey);
+    if (cached) {
+      setTeamResults(cached);
+      setIsGenerating(false);
+      return;
+    }
+    setTeamResults(null);
+    setIsGenerating(true);
     const timer = window.setTimeout(() => {
-      const result = generateOptimalTeams(characters, selectedName);
+      const result = generateOptimalTeams(characters, selectedName, 8, requiredNames);
       cache.current.set(cacheKey, result);
       setTeamResults(result);
       setIsGenerating(false);
     }, 30);
     return () => window.clearTimeout(timer);
-  }, [selectedName, season.id, characters, characterMap]);
+  }, [selectedName, season.id, characters, characterMap, chainMembers]);
 
   const selectedCharacter = selectedName ? characterMap.get(selectedName) : undefined;
+  const focusedChainCharacter = chainFocus ? characterMap.get(chainFocus) : selectedCharacter;
+  const incomingChainOptions = focusedChainCharacter
+    ? focusedChainCharacter.providers.filter((name) => characterMap.get(name)?.released && !chainMembers.includes(name))
+    : [];
+  const outgoingChainOptions = focusedChainCharacter
+    ? (recipients.get(focusedChainCharacter.name) ?? []).filter((name) => characterMap.get(name)?.released && !chainMembers.includes(name))
+    : [];
   const normalizedSearch = search.trim().toLowerCase();
 
   const openTeamBuilder = (name: string) => {
@@ -526,14 +557,103 @@ export function ConnectionsExplorer() {
         ? activeElement
         : null;
     setSelectedName(name);
+    chainSequenceRef.current = 0;
+    setChainSteps([{ name, order: 0 }]);
+    setChainFocus(name);
     setTeamResults(cached);
     setIsGenerating(Boolean(character?.released && !cached));
   };
 
   const closeTeamBuilder = () => {
     setSelectedName(null);
+    setChainSteps([]);
+    setChainFocus(null);
     setTeamResults(null);
     setIsGenerating(false);
+  };
+
+  const addChainMember = (name: string, direction: ChainDirection) => {
+    setChainSteps((steps) => {
+      if (steps.length >= 6 || steps.some((step) => step.name === name)) return steps;
+      const parent = chainFocus ?? selectedName ?? undefined;
+      const focusedIndex = steps.findIndex((step) => step.name === parent);
+      const insertionIndex = focusedIndex < 0
+        ? steps.length
+        : direction === "incoming"
+          ? focusedIndex
+          : focusedIndex + 1;
+      const next = [...steps];
+      chainSequenceRef.current += 1;
+      next.splice(insertionIndex, 0, {
+        name,
+        direction,
+        parent,
+        order: chainSequenceRef.current,
+      });
+      return next;
+    });
+    setChainFocus(name);
+  };
+
+  const removeChainBranch = (name: string) => {
+    if (name === selectedName) return;
+    setChainSteps((steps) => {
+      const removed = new Set([name]);
+      let foundDescendant = true;
+      while (foundDescendant) {
+        foundDescendant = false;
+        steps.forEach((step) => {
+          if (step.parent && removed.has(step.parent) && !removed.has(step.name)) {
+            removed.add(step.name);
+            foundDescendant = true;
+          }
+        });
+      }
+      const removedStep = steps.find((step) => step.name === name);
+      if (selectedName && removed.has(selectedName)) {
+        const preserved = new Set([selectedName]);
+        let foundPreservedDescendant = true;
+        while (foundPreservedDescendant) {
+          foundPreservedDescendant = false;
+          steps.forEach((step) => {
+            if (step.parent && preserved.has(step.parent) && !preserved.has(step.name)) {
+              preserved.add(step.name);
+              foundPreservedDescendant = true;
+            }
+          });
+        }
+        preserved.forEach((preservedName) => removed.delete(preservedName));
+      }
+      if (chainFocus && removed.has(chainFocus)) {
+        setChainFocus(removedStep?.parent ?? selectedName);
+      }
+      return steps
+        .filter((step) => !removed.has(step.name))
+        .map((step) => step.name === selectedName && step.parent && removed.has(step.parent)
+          ? { ...step, parent: undefined }
+          : step);
+    });
+  };
+
+  const undoChainMember = () => {
+    if (chainMembers.length <= 1) return;
+    const latestStep = chainSteps.reduce<ChainStep | null>(
+      (latest, step) => step.name !== selectedName && (!latest || step.order > latest.order) ? step : latest,
+      null,
+    );
+    if (latestStep) removeChainBranch(latestStep.name);
+  };
+
+  const resetChain = () => {
+    if (!selectedName) return;
+    chainSequenceRef.current = 0;
+    setChainSteps([{ name: selectedName, order: 0 }]);
+    setChainFocus(selectedName);
+  };
+
+  const switchSelectedCharacter = () => {
+    if (!chainFocus || chainFocus === selectedName) return;
+    setSelectedName(chainFocus);
   };
 
   useEffect(() => {
@@ -886,37 +1006,162 @@ export function ConnectionsExplorer() {
                 <p>His outgoing connections remain mapped so the live roster shows the full Season 9 picture.</p>
                 <button onClick={closeTeamBuilder}>Return to network</button>
               </div>
-            ) : isGenerating || !teamResults ? (
-              <div className="generating-panel" aria-live="polite">
-                <span className="loader" aria-hidden="true" />
-                <h3>Testing every eligible lineup…</h3>
-                <p>Scoring active links, complete packages, and role balance.</p>
-              </div>
             ) : (
               <div className="drawer-body">
-                <div className="results-summary">
-                  <span><strong>{teamResults.combinationsChecked.toLocaleString()}</strong> lineups checked</span>
-                  <span><strong>{teamResults.balanced.length + teamResults.open.length}</strong> top results shown</span>
-                </div>
-                <TeamSection
-                  eyebrow="SECTION 01 · ROLE QUEUE"
-                  title="Two · Two · Two"
-                  description="Exactly two Vanguards, two Duelists, and two Strategists. Deadpool fills the missing role when selected."
-                  teams={teamResults.balanced}
-                />
-                <TeamSection
-                  eyebrow="SECTION 02 · OPEN QUEUE"
-                  title="Any role combination"
-                  description="No role limits. Teams where every hero receives a team-up are ranked first."
-                  teams={teamResults.open}
-                />
-                <div className="ranking-note">
-                  <strong>How the ranking works</strong>
-                  <p>
-                    Receiving coverage comes first: each hero needs one of their listed providers on the team. Extra provider → recipient
-                    links break ties, followed by complete two-provider packages. The Hood is always excluded; Deadpool appears once at most.
-                  </p>
-                </div>
+                <section className="chain-builder" aria-labelledby="chain-builder-title">
+                  <div className="chain-builder-head">
+                    <div>
+                      <span className="eyebrow">WORKFLOW EDITOR · {chainMembers.length}/6 HEROES</span>
+                      <h3 id="chain-builder-title">Team-up workflow</h3>
+                      <p>Choose a portrait to edit from it. Incoming joins on the left; outgoing joins on the right.</p>
+                    </div>
+                    <div className="chain-actions">
+                      <button onClick={undoChainMember} disabled={chainMembers.length <= 1}>Undo</button>
+                      <button onClick={resetChain} disabled={chainMembers.length <= 1}>Start over</button>
+                    </div>
+                  </div>
+
+                  {focusedChainCharacter && (
+                    <div className="chain-picker">
+                      <div className="chain-options incoming-options">
+                        <div className="chain-option-heading">
+                          <strong>Incoming</strong>
+                          <span>Feeds the active step</span>
+                        </div>
+                        <div className="chain-option-list">
+                          {chainMembers.length < 6 && incomingChainOptions.length > 0 ? incomingChainOptions.map((name) => {
+                            const character = characterMap.get(name)!;
+                            return (
+                              <button
+                                onClick={() => addChainMember(name, "incoming")}
+                                aria-label={`Add ${name} as an incoming connection`}
+                                title={name}
+                                key={name}
+                              >
+                                <CharacterPortrait name={name} className={`chain-option-portrait ${roleClass(character.role)}`} />
+                                <b aria-hidden="true">→</b>
+                              </button>
+                            );
+                          }) : <span className="no-chain-options">{chainMembers.length >= 6 ? "Team filled" : "No unselected incoming options"}</span>}
+                        </div>
+                      </div>
+
+                      <div className="chain-center">
+                        <button
+                          className="chain-switch"
+                          onClick={switchSelectedCharacter}
+                          disabled={focusedChainCharacter.name === selectedName}
+                          aria-label={`Make ${focusedChainCharacter.name} the selected character`}
+                          title={`Make ${focusedChainCharacter.name} the selected character`}
+                        >
+                          <b aria-hidden="true">{focusedChainCharacter.name === selectedName ? "✓" : "↔"}</b>
+                          {focusedChainCharacter.name === selectedName ? "Selected hero" : "Set as selected hero"}
+                        </button>
+                        <span>Active step</span>
+                        <CharacterPortrait
+                          name={focusedChainCharacter.name}
+                          className={`chain-center-portrait ${roleClass(focusedChainCharacter.role)}`}
+                        />
+                        <div className="embedded-workflow" aria-label="Selected team-up workflow">
+                          {chainSteps.map((step, index) => {
+                            const character = characterMap.get(step.name)!;
+                            return (
+                              <div className="embedded-step" key={`${step.name}-${index}`}>
+                                <button
+                                  className={`embedded-step-select ${step.name === chainFocus ? "is-focus" : ""} ${step.name === selectedName ? "is-selected" : ""}`}
+                                  onClick={() => setChainFocus(step.name)}
+                                  aria-pressed={step.name === chainFocus}
+                                  aria-label={`Edit workflow from ${step.name}, step ${index + 1}`}
+                                  title={step.name}
+                                >
+                                  {step.direction && <i className={step.direction} aria-hidden="true">→</i>}
+                                  <CharacterPortrait name={step.name} className={`embedded-step-portrait ${roleClass(character.role)}`} />
+                                  <small>{index + 1}</small>
+                                </button>
+                                {step.name !== selectedName && (
+                                  <button
+                                    className="embedded-step-remove"
+                                    onClick={() => removeChainBranch(step.name)}
+                                    aria-label={`Remove ${step.name} and its branch`}
+                                    title={`Remove ${step.name} and its branch`}
+                                  >×</button>
+                                )}
+                              </div>
+                            );
+                          })}
+                          {Array.from({ length: 6 - chainMembers.length }, (_, index) => (
+                            <span className="embedded-empty-step" aria-hidden="true" key={`empty-${index}`}>{chainMembers.length + index + 1}</span>
+                          ))}
+                        </div>
+                        <div className="workflow-key" aria-hidden="true">
+                          <span><i className="selected" /> Selected</span>
+                          <span><i className="active" /> Active</span>
+                        </div>
+                      </div>
+
+                      <div className="chain-options outgoing-options">
+                        <div className="chain-option-heading">
+                          <strong>Outgoing</strong>
+                          <span>Continues from the active step</span>
+                        </div>
+                        <div className="chain-option-list">
+                          {chainMembers.length < 6 && outgoingChainOptions.length > 0 ? outgoingChainOptions.map((name) => {
+                            const character = characterMap.get(name)!;
+                            return (
+                              <button
+                                onClick={() => addChainMember(name, "outgoing")}
+                                aria-label={`Add ${name} as an outgoing connection`}
+                                title={name}
+                                key={name}
+                              >
+                                <b aria-hidden="true">→</b>
+                                <CharacterPortrait name={name} className={`chain-option-portrait ${roleClass(character.role)}`} />
+                              </button>
+                            );
+                          }) : <span className="no-chain-options">{chainMembers.length >= 6 ? "Team filled" : "No unselected outgoing options"}</span>}
+                        </div>
+                      </div>
+                    </div>
+                  )}
+                </section>
+
+                {isGenerating || !teamResults ? (
+                  <div className="generating-panel compact" aria-live="polite">
+                    <span className="loader" aria-hidden="true" />
+                    <div>
+                      <h3>Updating team results…</h3>
+                      <p>Your workflow stays editable while the best lineups are recalculated.</p>
+                    </div>
+                  </div>
+                ) : (
+                  <>
+                    <div className="results-summary" aria-live="polite">
+                      <span><strong>{teamResults.combinationsChecked.toLocaleString()}</strong> lineups checked</span>
+                      <span><strong>{teamResults.balanced.length + teamResults.open.length}</strong> top results shown</span>
+                    </div>
+                    <TeamSection
+                      eyebrow="SECTION 01 · ROLE QUEUE"
+                      title="Two · Two · Two"
+                      description="Exactly two Vanguards, two Duelists, and two Strategists. Deadpool fills the missing role when selected."
+                      teams={teamResults.balanced}
+                      selectedName={selectedCharacter.name}
+                    />
+                    <TeamSection
+                      eyebrow="SECTION 02 · OPEN QUEUE"
+                      title="Any role combination"
+                      description="No role limits. Teams where every hero receives a team-up are ranked first."
+                      teams={teamResults.open}
+                      selectedName={selectedCharacter.name}
+                    />
+                    <div className="ranking-note">
+                      <strong>How the ranking works</strong>
+                      <p>
+                        Receiving coverage comes first: each hero needs one of their listed providers on the team. Extra provider → recipient
+                        links break ties, followed by complete two-provider packages. The Hood is always excluded; Deadpool appears once at most.
+                      </p>
+                    </div>
+                  </>
+                )}
               </div>
             )}
           </aside>

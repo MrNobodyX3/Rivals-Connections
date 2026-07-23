@@ -78,6 +78,7 @@ export function generateOptimalTeams(
   characters: Character[],
   selectedName: string,
   limit = 8,
+  requiredNames: string[] = [selectedName],
 ): TeamResults {
   const available = characters.filter((character) => character.released);
   const selectedIndex = available.findIndex(
@@ -90,6 +91,13 @@ export function generateOptimalTeams(
   const nameToIndex = new Map(
     available.map((character, index) => [character.name, index]),
   );
+  const requiredNameSet = new Set([selectedName, ...requiredNames]);
+  const requiredIndices = [...requiredNameSet]
+    .map((name) => nameToIndex.get(name))
+    .filter((index): index is number => index !== undefined);
+  if (requiredIndices.length !== requiredNameSet.size || requiredIndices.length > 6) {
+    return { balanced: [], open: [], combinationsChecked: 0 };
+  }
   const providerIndices = available.map((character) =>
     character.providers
       .map((provider) => nameToIndex.get(provider))
@@ -97,10 +105,12 @@ export function generateOptimalTeams(
   );
   const candidates = available
     .map((_, index) => index)
-    .filter((index) => index !== selectedIndex);
+    .filter((index) => !requiredIndices.includes(index));
   const inTeam = new Uint8Array(available.length);
-  const chosen = [selectedIndex];
-  inTeam[selectedIndex] = 1;
+  const chosen = [...requiredIndices];
+  requiredIndices.forEach((index) => {
+    inTeam[index] = 1;
+  });
 
   const balanced: RankedTeam[] = [];
   const open: RankedTeam[] = [];
