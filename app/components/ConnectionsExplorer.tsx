@@ -123,11 +123,11 @@ function createHexCells(
   const lane = getRoleLane(role, graphSize);
   const top = graphSize.width < 700 ? 58 : 94;
   const bottom = graphSize.height - (graphSize.width < 700 ? 42 : 58);
-  const minimumSpacing = graphSize.width < 700 ? 38 : 66;
-  let spacing = preferredSpacing;
+  const minimumSpacing = graphSize.width < 700 ? 24 : 54;
+  let spacing = Math.max(preferredSpacing, minimumSpacing);
   let cells: Point[] = [];
 
-  while (spacing >= minimumSpacing) {
+  while (true) {
     cells = [];
     const rowStep = spacing * 0.866;
     let row = 0;
@@ -139,7 +139,35 @@ function createHexCells(
       row += 1;
     }
     if (cells.length >= count) break;
-    spacing -= 3;
+    if (spacing <= minimumSpacing) break;
+    spacing = Math.max(minimumSpacing, spacing - 3);
+  }
+
+  if (cells.length < count) {
+    const laneWidth = Math.max(1, lane.maxX - lane.minX);
+    const laneHeight = Math.max(1, bottom - top);
+    const columns = Math.max(
+      1,
+      Math.ceil(Math.sqrt((count * laneWidth) / laneHeight)),
+    );
+    const rows = Math.ceil(count / columns);
+    const columnStep = columns > 1 ? laneWidth / (columns - 1) : 0;
+    const rowStep = rows > 1 ? laneHeight / (rows - 1) : 0;
+    cells = [];
+    for (let row = 0; row < rows; row += 1) {
+      for (let column = 0; column < columns; column += 1) {
+        if (cells.length >= count) break;
+        cells.push({
+          x: lane.minX + column * columnStep,
+          y: top + row * rowStep,
+        });
+      }
+    }
+    const fallbackSteps = [columnStep, rowStep].filter((step) => step > 0);
+    spacing =
+      fallbackSteps.length > 0
+        ? Math.max(1, Math.min(...fallbackSteps))
+        : minimumSpacing;
   }
 
   return { cells, spacing };
