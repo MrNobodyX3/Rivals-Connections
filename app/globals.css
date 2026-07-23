@@ -134,13 +134,21 @@ button:focus-visible, input:focus-visible, select:focus-visible, a:focus-visible
 .explorer-head h2 { margin: 4px 0 0; font: 900 24px/1 var(--display); letter-spacing: -0.025em; text-transform: uppercase; }
 .network-key { display: flex; gap: 24px; color: var(--muted); font-size: 11px; }
 .network-key span { display: flex; align-items: center; gap: 9px; }
+.multi-focus-summary { max-width: min(60vw, 760px); padding: 7px 10px; display: flex; align-items: center; justify-content: flex-end; gap: 12px; border: 1px solid rgba(216,255,67,.38); background: rgba(216,255,67,.04); }
+.multi-focus-count { flex: 0 0 auto; color: var(--acid); font-size: 8px; font-weight: 900; letter-spacing: .13em; text-transform: uppercase; white-space: nowrap; }
+.multi-focus-roster { min-width: 0; display: flex; justify-content: flex-end; gap: 10px; }
+.multi-role-group { min-width: 0; display: grid; gap: 3px; }
+.multi-role-group small { color: var(--muted); font-size: 6px; font-weight: 900; letter-spacing: .1em; text-transform: uppercase; }
+.multi-role-group > div { display: flex; gap: 4px; }
+.multi-focus-hero { display: block; }
+.multi-focus-portrait { width: 27px; height: 27px; border: 1px solid currentColor; }
 .key-line { position: relative; display: inline-block; width: 32px; height: 2px; background: var(--acid); }
 .key-line::after { content: ""; position: absolute; right: -1px; top: -3px; border-left: 6px solid var(--acid); border-block: 4px solid transparent; }
 .key-line.outgoing { background: var(--strategist); }
 .key-line.outgoing::after { border-left-color: var(--strategist); }
 
 .toolbar { padding: 10px 16px; display: flex; gap: 14px; justify-content: space-between; align-items: center; border-bottom: 1px solid var(--line); background: rgba(255, 255, 255, 0.018); }
-.toolbar-hint { order: 2; margin-left: auto; color: var(--muted); font-size: 8px; font-weight: 850; letter-spacing: .09em; text-transform: uppercase; white-space: nowrap; }
+.toolbar-hint { order: 4; margin-left: auto; color: var(--muted); font-size: 8px; font-weight: 850; letter-spacing: .09em; text-transform: uppercase; white-space: nowrap; }
 .toolbar-hint i { margin-right: 5px; color: var(--acid); font-style: normal; }
 .search-box { width: 250px; height: 36px; display: flex; align-items: center; gap: 10px; padding: 0 12px; border: 1px solid var(--line); background: #0d1214; color: var(--muted); }
 .search-box input { min-width: 0; flex: 1; border: 0; outline: 0; color: var(--ink); background: transparent; font-size: 12px; }
@@ -150,6 +158,19 @@ button:focus-visible, input:focus-visible, select:focus-visible, a:focus-visible
 .role-filters button { padding: 7px 12px; border: 1px solid transparent; color: var(--muted); background: transparent; font-size: 10px; font-weight: 800; letter-spacing: 0.07em; text-transform: uppercase; }
 .role-filters button:hover { color: var(--ink); }
 .role-filters button.active { color: #0b0f10; background: var(--acid); }
+.multi-select-tools { order: 2; display: flex; align-items: center; gap: 5px; }
+.multi-select-toggle { min-height: 34px; padding: 5px 9px; display: flex; align-items: center; gap: 7px; border: 1px solid var(--line); color: var(--muted); background: #0b1113; cursor: pointer; user-select: none; }
+.multi-select-toggle:hover, .multi-select-toggle.active { border-color: rgba(216,255,67,.55); color: var(--ink); }
+.multi-select-toggle input { position: absolute; width: 1px; height: 1px; opacity: 0; pointer-events: none; }
+.multi-select-toggle > span { width: 15px; height: 15px; display: grid; place-items: center; border: 1px solid #647176; background: rgba(255,255,255,.02); }
+.multi-select-toggle > span::after { content: "✓"; color: #0b0f10; font: 900 11px/1 sans-serif; opacity: 0; transform: scale(.65); transition: opacity .15s ease, transform .15s ease; }
+.multi-select-toggle input:focus-visible + span { outline: 2px solid var(--ink); outline-offset: 2px; }
+.multi-select-toggle input:checked + span { border-color: var(--acid); background: var(--acid); }
+.multi-select-toggle input:checked + span::after { opacity: 1; transform: scale(1); }
+.multi-select-toggle strong { font-size: 8px; letter-spacing: .08em; text-transform: uppercase; white-space: nowrap; }
+.multi-select-toggle small { padding-left: 7px; border-left: 1px solid var(--line); color: var(--acid); font-size: 7px; font-weight: 900; white-space: nowrap; }
+.clear-multi-select { min-height: 34px; padding: 5px 9px; border: 1px solid var(--line); color: var(--muted); background: transparent; font-size: 8px; font-weight: 900; letter-spacing: .08em; text-transform: uppercase; }
+.clear-multi-select:hover { border-color: var(--ink); color: var(--ink); }
 
 .graph-frame { position: relative; flex: 1; min-height: 0; overflow: hidden; background: linear-gradient(rgba(255,255,255,.022) 1px, transparent 1px), linear-gradient(90deg, rgba(255,255,255,.022) 1px, transparent 1px), radial-gradient(circle at 50% 50%, rgba(216,255,67,.045), transparent 45%); background-size: 34px 34px, 34px 34px, auto; }
 .graph-frame::after { content: ""; position: absolute; inset: 0; pointer-events: none; box-shadow: inset 0 0 120px 35px #0d1214; }
@@ -165,13 +186,16 @@ button:focus-visible, input:focus-visible, select:focus-visible, a:focus-visible
 .edge.dim { stroke: rgba(183, 199, 203, .12); opacity: .34; }
 .edge.incoming { stroke: var(--acid); stroke-width: 2.7; opacity: 1; filter: drop-shadow(0 0 4px rgba(216,255,67,.48)); }
 .edge.outgoing { stroke: var(--strategist); stroke-width: 2.7; opacity: 1; filter: drop-shadow(0 0 4px rgba(66,217,200,.46)); }
+.edge.both { stroke: #fff; stroke-width: 3.2; opacity: 1; filter: drop-shadow(0 0 5px rgba(255,255,255,.55)); }
 #arrow-muted path { fill: #718086; }
 #arrow-incoming path { fill: var(--acid); }
 #arrow-outgoing path { fill: var(--strategist); }
+#arrow-both path { fill: #fff; }
 
 .hero-node { cursor: pointer; outline: none; transition: opacity .26s ease; }
 .hero-node.filter-dim { opacity: .12; }
 .hero-node.connection-dim { opacity: .42; }
+.hero-node.connection-related { opacity: .72; }
 .node-halo { fill: transparent; stroke: transparent; stroke-width: 2; transition: fill .18s ease, stroke .18s ease; }
 .node-core { fill: #151d20; stroke-width: 2.25; transition: transform .18s ease, filter .18s ease, fill .18s ease; }
 .node-portrait { pointer-events: none; }
@@ -182,6 +206,7 @@ button:focus-visible, input:focus-visible, select:focus-visible, a:focus-visible
 .hero-node.tbd .node-core { stroke: #899196; }
 .hero-node:hover .node-core, .hero-node:focus .node-core, .hero-node.active .node-core { transform: scale(1.13); filter: drop-shadow(0 0 7px currentColor); fill: #202a2d; }
 .hero-node:hover .node-halo, .hero-node:focus .node-halo, .hero-node.active .node-halo { stroke: rgba(255,255,255,.55); fill: rgba(255,255,255,.025); }
+.hero-node.multi-selected .node-halo { stroke: var(--acid); stroke-width: 3; fill: rgba(216,255,67,.06); }
 .node-initials { fill: var(--ink); font-size: 10.5px; font-weight: 900; letter-spacing: .05em; pointer-events: none; }
 .node-name { fill: #f0f3f3; font-size: 13px; font-weight: 800; paint-order: stroke; stroke: #0d1214; stroke-width: 4.5px; stroke-linejoin: round; pointer-events: none; transition: opacity .2s ease; }
 .hero-node.name-hidden .node-name { opacity: 0; }
@@ -194,7 +219,7 @@ button:focus-visible, input:focus-visible, select:focus-visible, a:focus-visible
 .focus-title > span:last-child { display: grid; gap: 3px; }
 .focus-title strong { color: var(--ink); font-size: 13px; }
 .focus-title small { color: var(--muted); font-size: 9px; letter-spacing: .1em; text-transform: uppercase; }
-.mini-monogram { flex: 0 0 auto; width: 35px; height: 35px; display: grid; place-items: center; border: 1px solid; font-size: 9px; font-weight: 900; }
+.mini-monogram { flex: 0 0 auto; width: 35px; height: 35px; border: 1px solid; font-size: 9px; font-weight: 900; }
 .mini-monogram.vanguard, .drawer-monogram.vanguard { border-color: var(--vanguard); color: var(--vanguard); }
 .mini-monogram.duelist, .drawer-monogram.duelist { border-color: var(--duelist); color: var(--duelist); }
 .mini-monogram.strategist, .drawer-monogram.strategist { border-color: var(--strategist); color: var(--strategist); }
@@ -240,6 +265,16 @@ button:focus-visible, input:focus-visible, select:focus-visible, a:focus-visible
   transition: background .16s ease, padding .16s ease;
 }
 .ranking-row:hover, .ranking-row:focus-visible { padding-inline: 9px; background: rgba(255,255,255,.035); }
+.ranking-row.relation-source { background: rgba(255,255,255,.075); box-shadow: inset 3px 0 var(--ink); }
+.ranking-row.relation-incoming { background: rgba(216,255,67,.075); box-shadow: inset 3px 0 var(--acid); }
+.ranking-row.relation-outgoing { background: rgba(53,224,208,.075); box-shadow: inset 3px 0 var(--strategist); }
+.ranking-row.relation-both { background: rgba(255,255,255,.085); box-shadow: inset 3px 0 #fff; }
+.ranking-row.relation-incoming .ranking-label strong { color: var(--acid); }
+.ranking-row.relation-outgoing .ranking-label strong { color: var(--strategist); }
+.ranking-row.relation-both .ranking-label strong { color: #fff; }
+.ranking-row.relation-incoming .ranking-portrait { box-shadow: 0 0 0 2px rgba(216,255,67,.55); }
+.ranking-row.relation-outgoing .ranking-portrait { box-shadow: 0 0 0 2px rgba(53,224,208,.55); }
+.ranking-row.relation-both .ranking-portrait { box-shadow: 0 0 0 2px rgba(255,255,255,.65); }
 .ranking-label { min-width: 0; display: flex; align-items: center; gap: 9px; }
 .ranking-label small { width: 22px; color: #667176; font: 900 8px/1 var(--display); }
 .ranking-label strong { overflow: hidden; font-size: 11px; text-overflow: ellipsis; white-space: nowrap; }
@@ -416,8 +451,11 @@ footer strong { color: var(--ink); font: 800 14px/1 var(--display); text-transfo
   .hero-stats strong { font-size: 25px; }
   .explorer-head { align-items: flex-start; flex-direction: column; gap: 17px; }
   .network-key { flex-wrap: wrap; gap: 12px; }
+  .multi-focus-summary { display: none; }
   .toolbar { align-items: stretch; flex-direction: column; }
   .search-box { width: 100%; }
+  .multi-select-tools { width: 100%; }
+  .multi-select-toggle { flex: 1; }
   .role-filters { overflow-x: auto; }
   .role-filters button { flex: 0 0 auto; }
   .explorer { height: calc(100vh - 68px); height: calc(100dvh - 68px); }

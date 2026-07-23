@@ -30,6 +30,13 @@ const roleOrder: RoleFilter[] = [
   "Duelist",
   "Strategist",
 ];
+const selectionRoleOrder: Array<{ role: Role; label: string }> = [
+  { role: "Vanguard", label: "Vanguard" },
+  { role: "Duelist", label: "Duelist" },
+  { role: "Strategist", label: "Strategist" },
+  { role: "All", label: "Flex" },
+  { role: "TBD", label: "TBD" },
+];
 
 function getRoleCenters({ width, height }: GraphSize): Record<Role, Point> {
   return {
@@ -374,6 +381,9 @@ export function ConnectionsExplorer() {
   const [seasonId, setSeasonId] = useState(seasons[0].id);
   const [viewMode, setViewMode] = useState<ViewMode>("network");
   const [hoveredName, setHoveredName] = useState<string | null>(null);
+  const [rankingHoveredName, setRankingHoveredName] = useState<string | null>(null);
+  const [isMultiSelect, setIsMultiSelect] = useState(false);
+  const [pinnedNames, setPinnedNames] = useState<Set<string>>(() => new Set());
   const [failedImageNames, setFailedImageNames] = useState<Set<string>>(() => new Set());
   const [selectedName, setSelectedName] = useState<string | null>(null);
   const [chainSteps, setChainSteps] = useState<ChainStep[]>([]);
@@ -450,7 +460,8 @@ export function ConnectionsExplorer() {
 
   useEffect(() => {
     const startLayout = displayLayoutRef.current;
-    const targetLayout = createHoverTarget(layout, characters, hoveredName, graphSize);
+    const layoutHoverName = isMultiSelect && pinnedNames.size > 0 ? null : hoveredName;
+    const targetLayout = createHoverTarget(layout, characters, layoutHoverName, graphSize);
     const startedAt = performance.now();
     const duration = window.matchMedia("(prefers-reduced-motion: reduce)").matches ? 1 : 220;
     let animationFrame = 0;
@@ -474,7 +485,7 @@ export function ConnectionsExplorer() {
 
     animationFrame = window.requestAnimationFrame(animate);
     return () => window.cancelAnimationFrame(animationFrame);
-  }, [characters, graphSize, hoveredName, layout]);
+  }, [characters, graphSize, hoveredName, isMultiSelect, layout, pinnedNames]);
 
   const recipients = useMemo(() => {
     const map = new Map<string, string[]>();
@@ -503,17 +514,38 @@ export function ConnectionsExplorer() {
   }, [characters, edges]);
   const maxConnectionCount = Math.max(...connectionRanking.map((item) => item.total), 1);
 
-  const activeName = hoveredName ?? selectedName;
+  const activeName = isMultiSelect && pinnedNames.size > 0
+    ? null
+    : hoveredName ?? (isMultiSelect ? null : selectedName);
   const activeCharacter = activeName ? characterMap.get(activeName) : undefined;
+  const highlightedNames = useMemo(() => {
+    if (isMultiSelect) {
+      const names = new Set(pinnedNames);
+      if (hoveredName) names.add(hoveredName);
+      return names;
+    }
+    const singleName = hoveredName ?? selectedName;
+    return singleName ? new Set([singleName]) : new Set<string>();
+  }, [hoveredName, isMultiSelect, pinnedNames, selectedName]);
   const connectedNames = useMemo(() => {
-    if (!activeName) return new Set<string>();
-    const names = new Set([activeName]);
+    if (highlightedNames.size === 0) return new Set<string>();
+    if (isMultiSelect) {
+      const names = new Set(pinnedNames);
+      if (!hoveredName) return names;
+      names.add(hoveredName);
+      edges.forEach((edge) => {
+        if (edge.source === hoveredName) names.add(edge.target);
+        if (edge.target === hoveredName) names.add(edge.source);
+      });
+      return names;
+    }
+    const names = new Set(highlightedNames);
     edges.forEach((edge) => {
-      if (edge.source === activeName) names.add(edge.target);
-      if (edge.target === activeName) names.add(edge.source);
+      if (highlightedNames.has(edge.source)) names.add(edge.target);
+      if (highlightedNames.has(edge.target)) names.add(edge.source);
     });
     return names;
-  }, [activeName, edges]);
+  }, [edges, highlightedNames, hoveredName, isMultiSelect, pinnedNames]);
 
   useEffect(() => {
     if (!selectedName) return;
@@ -702,7 +734,30 @@ export function ConnectionsExplorer() {
     const match = characters.find((character) =>
       character.name.toLowerCase().includes(normalizedSearch),
     );
-    if (match) openTeamBuilder(match.name);
+    if (match) activateGraphNode(match.name);
+  };
+
+  const togglePinnedName = (name: string) => {
+    setPinnedNames((current) => {
+      const next = new Set(current);
+      if (next.has(name)) next.delete(name);
+      else next.add(name);
+      return next;
+    });
+  };
+
+  const activateGraphNode = (name: string) => {
+    if (isMultiSelect) {
+      togglePinnedName(name);
+      return;
+    }
+    openTeamBuilder(name);
+  };
+
+  const toggleMultiSelect = (enabled: boolean) => {
+    setIsMultiSelect(enabled);
+    setPinnedNames(new Set());
+    setHoveredName(null);
   };
 
   const beginNodeHover = (name: string) => {
@@ -755,6 +810,7 @@ export function ConnectionsExplorer() {
             value={seasonId}
             onChange={(event) => {
               closeTeamBuilder();
+              setPinnedNames(new Set());
               setSeasonId(event.target.value);
             }}
           >
@@ -776,10 +832,40 @@ export function ConnectionsExplorer() {
             </h2>
           </div>
           {viewMode === "network" ? (
-            activeCharacter ? (
+            isMultiSelect && pinnedNames.size > 0 ? (
+              <div className="multi-focus-summary" aria-live="polite">
+                <span className="multi-focus-count">{pinnedNames.size} selected</span>
+                <div className="multi-focus-roster">
+                  {selectionRoleOrder.map(({ role, label }) => {
+                    const names = [...pinnedNames].filter(
+                      (name) => characterMap.get(name)?.role === role,
+                    );
+                    if (names.length === 0) return null;
+                    return (
+                      <div className="multi-role-group" aria-label={`${label}: ${names.join(", ")}`} key={role}>
+                        <small>{label}</small>
+                        <div>
+                          {names.map((name) => (
+                            <span className="multi-focus-hero" role="img" aria-label={name} title={name} key={name}>
+                              <CharacterPortrait
+                                name={name}
+                                className={`multi-focus-portrait ${roleClass(role)}`}
+                              />
+                            </span>
+                          ))}
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            ) : activeCharacter ? (
               <div className="focus-summary" aria-live="polite">
                 <div className="focus-title">
-                  <span className={`mini-monogram ${roleClass(activeCharacter.role)}`}>{initials(activeCharacter.name)}</span>
+                  <CharacterPortrait
+                    name={activeCharacter.name}
+                    className={`mini-monogram ${roleClass(activeCharacter.role)}`}
+                  />
                   <span>
                     <strong>{activeCharacter.name}</strong>
                     <small>{activeCharacter.role === "All" ? "Flexible role" : activeCharacter.role}</small>
@@ -832,7 +918,27 @@ export function ConnectionsExplorer() {
               </button>
             ))}
           </div>
-          <span className="toolbar-hint"><i aria-hidden="true">↗</i> Hover to trace · click to build</span>
+          <div className="multi-select-tools">
+            <label className={`multi-select-toggle ${isMultiSelect ? "active" : ""}`}>
+              <input
+                type="checkbox"
+                checked={isMultiSelect}
+                onChange={(event) => toggleMultiSelect(event.target.checked)}
+              />
+              <span aria-hidden="true" />
+              <strong>Select multiple</strong>
+              {isMultiSelect && <small>{pinnedNames.size} selected</small>}
+            </label>
+            {isMultiSelect && pinnedNames.size > 0 && (
+              <button className="clear-multi-select" onClick={() => setPinnedNames(new Set())}>
+                Clear
+              </button>
+            )}
+          </div>
+          <span className="toolbar-hint">
+            <i aria-hidden="true">↗</i>
+            {isMultiSelect ? "Click heroes to add or remove" : "Hover to trace · click to build"}
+          </span>
         </div>
 
         <div className={`graph-frame ${viewMode === "network" ? "" : "is-hidden"}`}>
@@ -847,6 +953,7 @@ export function ConnectionsExplorer() {
                 <marker id="arrow-muted" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="5" markerHeight="5" orient="auto-start-reverse"><path d="M 0 0 L 10 5 L 0 10 z" /></marker>
                 <marker id="arrow-incoming" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M 0 0 L 10 5 L 0 10 z" /></marker>
                 <marker id="arrow-outgoing" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M 0 0 L 10 5 L 0 10 z" /></marker>
+                <marker id="arrow-both" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M 0 0 L 10 5 L 0 10 z" /></marker>
               </defs>
               <g className="svg-role-labels" aria-hidden="true">
                 <text className="vanguard" x={roleCenters.Vanguard.x} y="58" textAnchor="middle">VANGUARD</text>
@@ -857,16 +964,35 @@ export function ConnectionsExplorer() {
                 {edges.map((edge) => {
                   const source = displayLayout.get(edge.source) ?? layout.get(edge.source)!;
                   const target = displayLayout.get(edge.target) ?? layout.get(edge.target)!;
-                  const isOutgoing = activeName === edge.source;
-                  const isIncoming = activeName === edge.target;
+                  const sourceHighlighted = highlightedNames.has(edge.source);
+                  const targetHighlighted = highlightedNames.has(edge.target);
                   const bend = 18 + (hashName(`${edge.source}:${edge.target}`) % 24);
                   const curve = edge.source < edge.target ? bend : -bend;
-                  const state = isOutgoing ? "outgoing" : isIncoming ? "incoming" : activeName ? "dim" : "muted";
+                  const state = isMultiSelect
+                    ? hoveredName === edge.source
+                      ? "outgoing"
+                      : hoveredName === edge.target
+                        ? "incoming"
+                        : pinnedNames.has(edge.source) && pinnedNames.has(edge.target)
+                          ? "both"
+                          : highlightedNames.size > 0
+                            ? "dim"
+                            : "muted"
+                    : sourceHighlighted && targetHighlighted
+                      ? "both"
+                      : sourceHighlighted
+                        ? "outgoing"
+                        : targetHighlighted
+                          ? "incoming"
+                          : highlightedNames.size > 0
+                            ? "dim"
+                            : "muted";
+                  const markerState = state === "dim" ? "muted" : state;
                   return (
                     <path
                       className={`edge ${state}`}
                       d={edgePath(source, target, curve, nodeRadius)}
-                      markerEnd={`url(#arrow-${isOutgoing ? "outgoing" : isIncoming ? "incoming" : "muted"})`}
+                      markerEnd={`url(#arrow-${markerState})`}
                       key={`${edge.source}-${edge.target}`}
                     />
                   );
@@ -881,30 +1007,34 @@ export function ConnectionsExplorer() {
                     character.role === "All";
                   const isSearchMatch =
                     !normalizedSearch || character.name.toLowerCase().includes(normalizedSearch);
-                  const isConnected = !activeName || connectedNames.has(character.name);
+                  const isConnected = highlightedNames.size === 0 || connectedNames.has(character.name);
                   const isFilterDim = !isRoleMatch || !isSearchMatch;
                   const isConnectionDim = !isFilterDim && !isConnected;
-                  const hideName = Boolean(activeName) && !isConnected;
-                  const isActive = activeName === character.name;
+                  const hideName = highlightedNames.size > 0 && !isConnected;
+                  const isActive = highlightedNames.has(character.name);
+                  const isRelatedPreview =
+                    highlightedNames.size > 0 && !isFilterDim && isConnected && !isActive;
+                  const isPinned = pinnedNames.has(character.name);
                   const hasImage = !failedImageNames.has(character.name);
                   const portraitId = `portrait-${character.name.replace(/[^a-zA-Z0-9]/g, "").toLowerCase()}`;
                   return (
                     <g
-                      className={`hero-node ${roleClass(character.role)} ${isFilterDim ? "filter-dim" : ""} ${isConnectionDim ? "connection-dim" : ""} ${hideName ? "name-hidden" : ""} ${isActive ? "active" : ""} ${!character.released ? "unreleased" : ""}`}
+                      className={`hero-node ${roleClass(character.role)} ${isFilterDim ? "filter-dim" : ""} ${isConnectionDim ? "connection-dim" : ""} ${isRelatedPreview ? "connection-related" : ""} ${hideName ? "name-hidden" : ""} ${isActive ? "active" : ""} ${isPinned ? "multi-selected" : ""} ${!character.released ? "unreleased" : ""}`}
                       data-character={character.name}
                       role="button"
                       tabIndex={0}
-                      aria-label={`${character.name}, ${character.role === "All" ? "any role" : character.role}. ${character.released ? "Select to generate optimal teams." : "Not yet released; team generation unavailable."}`}
+                      aria-pressed={isMultiSelect ? isPinned : undefined}
+                      aria-label={`${character.name}, ${character.role === "All" ? "any role" : character.role}. ${isMultiSelect ? `${isPinned ? "Remove from" : "Add to"} path selection.` : character.released ? "Select to generate optimal teams." : "Not yet released; team generation unavailable."}`}
                       transform={`translate(${point.x.toFixed(2)} ${point.y.toFixed(2)})`}
                       onMouseEnter={() => beginNodeHover(character.name)}
                       onMouseLeave={endNodeHover}
                       onFocus={() => beginNodeHover(character.name)}
                       onBlur={() => setHoveredName(null)}
-                      onClick={() => openTeamBuilder(character.name)}
+                      onClick={() => activateGraphNode(character.name)}
                       onKeyDown={(event) => {
                         if (event.key === "Enter" || event.key === " ") {
                           event.preventDefault();
-                          openTeamBuilder(character.name);
+                          activateGraphNode(character.name);
                         }
                       }}
                       key={character.name}
@@ -943,37 +1073,60 @@ export function ConnectionsExplorer() {
         </div>
         <section className={`connections-chart ${viewMode === "ranking" ? "" : "is-hidden"}`} aria-label="Connection rankings">
           <div className="ranking-chart" aria-label="Characters ranked from least to most total connections">
-            {connectionRanking.map((item, index) => (
-              <button
-                className="ranking-row"
-                onClick={() => openTeamBuilder(item.character.name)}
-                aria-label={`${item.character.name}: ${item.total} total connections, ${item.incoming} received and ${item.outgoing} provided. Select to build a team.`}
-                key={item.character.name}
-              >
-                <span className="ranking-label">
-                  <small>{String(index + 1).padStart(2, "0")}</small>
-                  <CharacterPortrait
-                    name={item.character.name}
-                    className={`ranking-portrait ${roleClass(item.character.role)}`}
-                  />
-                  <strong>{item.character.name}</strong>
-                </span>
-                <span className="bar-track" aria-hidden="true">
-                  <span
-                    className="bar-segment incoming"
-                    style={{ width: `${(item.incoming / maxConnectionCount) * 100}%` }}
-                  />
-                  <span
-                    className="bar-segment outgoing"
-                    style={{ width: `${(item.outgoing / maxConnectionCount) * 100}%` }}
-                  />
-                </span>
-                <span className="ranking-total">
-                  <strong>{item.total}</strong>
-                  <small>{item.incoming}R · {item.outgoing}P</small>
-                </span>
-              </button>
-            ))}
+            {connectionRanking.map((item, index) => {
+              const isHoverSource = rankingHoveredName === item.character.name;
+              const isIncomingRelation = Boolean(
+                rankingHoveredName &&
+                characterMap.get(rankingHoveredName)?.providers.includes(item.character.name),
+              );
+              const isOutgoingRelation = Boolean(
+                rankingHoveredName &&
+                (recipients.get(rankingHoveredName) ?? []).includes(item.character.name),
+              );
+              const relationClass = isIncomingRelation && isOutgoingRelation
+                ? "relation-both"
+                : isIncomingRelation
+                  ? "relation-incoming"
+                  : isOutgoingRelation
+                    ? "relation-outgoing"
+                    : "";
+
+              return (
+                <button
+                  className={`ranking-row ${isHoverSource ? "relation-source" : ""} ${relationClass}`}
+                  onMouseEnter={() => setRankingHoveredName(item.character.name)}
+                  onMouseLeave={() => setRankingHoveredName(null)}
+                  onFocus={() => setRankingHoveredName(item.character.name)}
+                  onBlur={() => setRankingHoveredName(null)}
+                  onClick={() => openTeamBuilder(item.character.name)}
+                  aria-label={`${item.character.name}: ${item.total} total connections, ${item.incoming} received and ${item.outgoing} provided. Select to build a team.`}
+                  key={item.character.name}
+                >
+                  <span className="ranking-label">
+                    <small>{String(index + 1).padStart(2, "0")}</small>
+                    <CharacterPortrait
+                      name={item.character.name}
+                      className={`ranking-portrait ${roleClass(item.character.role)}`}
+                    />
+                    <strong>{item.character.name}</strong>
+                  </span>
+                  <span className="bar-track" aria-hidden="true">
+                    <span
+                      className="bar-segment incoming"
+                      style={{ width: `${(item.incoming / maxConnectionCount) * 100}%` }}
+                    />
+                    <span
+                      className="bar-segment outgoing"
+                      style={{ width: `${(item.outgoing / maxConnectionCount) * 100}%` }}
+                    />
+                  </span>
+                  <span className="ranking-total">
+                    <strong>{item.total}</strong>
+                    <small>{item.incoming}R · {item.outgoing}P</small>
+                  </span>
+                </button>
+              );
+            })}
           </div>
         </section>
       </section>
