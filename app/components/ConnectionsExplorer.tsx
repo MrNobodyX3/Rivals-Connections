@@ -47,6 +47,17 @@ function hashName(name: string) {
   return [...name].reduce((hash, char) => (hash * 31 + char.charCodeAt(0)) >>> 0, 7);
 }
 
+function characterImageFilename(name: string) {
+  const camelCaseName = name
+    .replace(/&/g, " And ")
+    .split(/[^a-zA-Z0-9]+/)
+    .filter(Boolean)
+    .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+    .join("");
+
+  return `${camelCaseName}.webp`;
+}
+
 function createLayout(characters: Character[], edges: GraphEdge[], graphSize: GraphSize) {
   const { width, height } = graphSize;
   const roleCenters = getRoleCenters(graphSize);
@@ -330,6 +341,7 @@ export function ConnectionsExplorer() {
   const [seasonId, setSeasonId] = useState(seasons[0].id);
   const [viewMode, setViewMode] = useState<ViewMode>("network");
   const [hoveredName, setHoveredName] = useState<string | null>(null);
+  const [failedImageNames, setFailedImageNames] = useState<Set<string>>(() => new Set());
   const [selectedName, setSelectedName] = useState<string | null>(null);
   const [search, setSearch] = useState("");
   const [roleFilter, setRoleFilter] = useState<RoleFilter>("All heroes");
@@ -733,6 +745,8 @@ export function ConnectionsExplorer() {
                   const isConnectionDim = !isFilterDim && !isConnected;
                   const hideName = Boolean(activeName) && !isConnected;
                   const isActive = activeName === character.name;
+                  const hasImage = !failedImageNames.has(character.name);
+                  const portraitId = `portrait-${character.name.replace(/[^a-zA-Z0-9]/g, "").toLowerCase()}`;
                   return (
                     <g
                       className={`hero-node ${roleClass(character.role)} ${isFilterDim ? "filter-dim" : ""} ${isConnectionDim ? "connection-dim" : ""} ${hideName ? "name-hidden" : ""} ${isActive ? "active" : ""} ${!character.released ? "unreleased" : ""}`}
@@ -754,9 +768,28 @@ export function ConnectionsExplorer() {
                       }}
                       key={character.name}
                     >
+                      <defs>
+                        <clipPath id={portraitId}>
+                          <circle r={nodeRadius - 2} />
+                        </clipPath>
+                      </defs>
                       <circle className="node-halo" r={nodeRadius + 7} />
                       <circle className="node-core" r={nodeRadius} />
-                      <text className="node-initials" textAnchor="middle" dominantBaseline="central">{initials(character.name)}</text>
+                      {hasImage ? (
+                        <image
+                          className="node-portrait"
+                          href={`characters/${characterImageFilename(character.name)}`}
+                          x={-nodeRadius + 2}
+                          y={-nodeRadius + 2}
+                          width={(nodeRadius - 2) * 2}
+                          height={(nodeRadius - 2) * 2}
+                          clipPath={`url(#${portraitId})`}
+                          preserveAspectRatio="xMidYMid slice"
+                          onError={() => setFailedImageNames((names) => new Set(names).add(character.name))}
+                        />
+                      ) : (
+                        <text className="node-initials" textAnchor="middle" dominantBaseline="central">{initials(character.name)}</text>
+                      )}
                       <text className="node-name" y={nodeRadius + 17} textAnchor="middle">{character.name}</text>
                       {!character.released && <text className="node-nr" x={nodeRadius * 0.72} y={-nodeRadius * 0.7} textAnchor="middle">NR</text>}
                     </g>
