@@ -812,10 +812,6 @@ export function ConnectionsExplorer() {
     () => createLayout(characters, edges, layoutSize),
     [characters, edges, layoutSize],
   );
-  const edgePorts = useMemo(
-    () => createEdgePorts(layout, edges, nodeRadius),
-    [edges, layout, nodeRadius],
-  );
   const [displayLayout, setDisplayLayout] = useState(layout);
   const displayLayoutRef = useRef(layout);
 
@@ -847,6 +843,14 @@ export function ConnectionsExplorer() {
     animationFrame = window.requestAnimationFrame(animate);
     return () => window.cancelAnimationFrame(animationFrame);
   }, [characters, hoveredName, isMultiSelect, layout, layoutSize]);
+
+  // Nodes make room for the focused hero. Recalculate their edge ports from
+  // those displayed positions so curved routes stay attached to the nearest
+  // side of each portrait throughout that motion.
+  const edgePorts = useMemo(
+    () => createEdgePorts(displayLayout, edges, nodeRadius),
+    [displayLayout, edges, nodeRadius],
+  );
 
   const recipients = useMemo(() => {
     const map = new Map<string, string[]>();
@@ -1536,8 +1540,8 @@ export function ConnectionsExplorer() {
             {!selectedCharacter.released ? (
               <div className="unreleased-panel">
                 <span>UNRELEASED HERO</span>
-                <h3>The Hood is visible in the network, but not eligible for teams yet.</h3>
-                <p>His outgoing connections remain mapped so the live roster shows the full Season 9 picture.</p>
+                <h3>{selectedCharacter.name} is visible in the network, but not eligible for teams yet.</h3>
+                <p>Their outgoing connections remain mapped so the roster shows the full season picture.</p>
                 <button onClick={closeTeamBuilder}>Return to network</button>
               </div>
             ) : (
@@ -1693,7 +1697,7 @@ export function ConnectionsExplorer() {
                       <strong>How the ranking works</strong>
                       <p>
                         Receiving coverage comes first: each hero needs one of their listed providers on the team. Extra provider → recipient
-                        links break ties, followed by complete two-provider packages. The Hood is always excluded; Deadpool appears once at most.
+                        links break ties, followed by complete two-provider packages. Deadpool appears once at most.
                       </p>
                     </div>
                   </>

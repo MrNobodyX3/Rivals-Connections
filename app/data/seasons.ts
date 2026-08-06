@@ -105,6 +105,21 @@ function parseSeasonCsv(csv: string): Character[] {
 
 export const seasons: Season[] = [
   {
+    id: "9.5",
+    label: "Season 9.5",
+    shortLabel: "S9.5",
+    characters: parseSeasonCsv(season90Csv).map((character) =>
+      character.name === "The Hood"
+        ? {
+            ...character,
+            providers: ["Scarlet Witch", "Moon Knight"],
+            role: "Vanguard",
+            released: true,
+          }
+        : character,
+    ),
+  },
+  {
     id: "9.0",
     label: "Season 9",
     shortLabel: "S9.0",

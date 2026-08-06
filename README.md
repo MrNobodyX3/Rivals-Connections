@@ -1,14 +1,14 @@
 # Rivals Connections
 
-An interactive Season 9 Marvel Rivals team-up network and six-hero composition builder.
+An interactive Season 9.5 Marvel Rivals team-up network and six-hero composition builder.
 
 ## What it does
 
-- Draws every provider → recipient team-up from the Season 9 data.
+- Draws every provider → recipient team-up from the selected season's data.
 - Highlights both incoming and outgoing connections on hover or keyboard focus.
 - Ranks the best six-hero teams around any selected released hero.
 - Separates exact 2 Vanguard / 2 Duelist / 2 Strategist teams from open-role teams.
-- Treats Deadpool as a one-slot flexible role and excludes The Hood from playable teams.
+- Treats Deadpool as a one-slot flexible role.
 - Exports as a static site for GitHub Pages.
 
 ## Run locally
